@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+/* Tokens de la plantilla hamburgueseria (colores, tipo, espaciado, radios). */
+@import "../../templates/hamburgueseria/theme.css";
+
+/* Los templates viven fuera de web/ — Tailwind no los escanea solo. */
+@source "../../templates";
+
+/* Piso de accesibilidad */
+:focus-visible {
+  outline: 2px solid var(--color-brasa, currentColor);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/*
+ * Reveal de texto por líneas (RevelarLineas.tsx): el HTML del SSR sale oculto
+ * porque el servidor no puede conocer la preferencia del usuario. Acá se fuerza
+ * el estado final para quien pidió menos movimiento, sin depender de JS.
+ */
+@media (prefers-reduced-motion: reduce) {
+  [data-revelar] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

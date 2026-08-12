@@ -1,0 +1,78 @@
+{
+  "slug": "ejemplo-burger-pocitos",
+  "name": "Ejemplo Burger",
+  "vertical": "hamburgueseria",
+  "tagline": "Smash burgers en el corazón de Pocitos",
+  "phone": "+598 99 123 456",
+  "whatsapp": "59899123456",
+  "address": "Av. Brasil 2500, Pocitos, Montevideo",
+  "mapsUrl": "https://maps.google.com/?cid=123",
+  "instagram": "@ejemploburger",
+  "hero": {
+    "heading": "La smash que Pocitos estaba esperando",
+    "sub": "Carne fresca, pan brioche, cero vueltas.",
+    "image": "/img/ejemplo/hero.jpg",
+    "model3d": "/models/burger.glb",
+    "videoFallback": "/video/burger-mobile.mp4"
+  },
+  "about": "Arrancamos en 2021 con una plancha y una idea fija: la mejor smash de la zona.",
+  "highlights": [
+    { "value": "2021", "label": "Desde" },
+    { "value": "100%", "label": "Carne fresca" },
+    { "value": "2 AM", "label": "Hasta los findes" }
+  ],
+  "menu": [
+    {
+      "title": "Hamburguesas",
+      "items": [
+        { "name": "Clásica", "description": "Doble medallón smash, cheddar fundido, salsa de la casa y pan brioche tostado en la plancha", "price": "$490", "tag": "destacado", "image": "/hamburgueseria/platos/clasica.png" },
+        { "name": "Bacon Fest", "description": "Panceta crocante, cheddar, cebolla caramelizada", "price": "$560", "image": "/hamburgueseria/platos/bacon-fest.png" },
+        { "name": "Oklahoma", "description": "Cebolla planchada contra el medallón, mostaza, pepinillos", "price": "$520", "tag": "nuevo", "image": "/hamburgueseria/platos/oklahoma.png" },
+        { "name": "Verde", "description": "Medallón de garbanzos, palta, tomate asado", "price": "$480", "tag": "vegano", "image": "/hamburgueseria/platos/verde.png" },
+        { "name": "Doble Doble", "description": "Cuatro medallones, doble cheddar, para los que vienen con hambre de verdad", "price": "$690", "image": "/hamburgueseria/platos/doble-doble.png" }
+      ]
+    },
+    {
+      "title": "Acompañamientos",
+      "items": [
+        { "name": "Papas de la casa", "description": "Corte grueso, sal de romero", "price": "$220" },
+        { "name": "Aros de cebolla", "description": "Rebozados a mano, salsa brava", "price": "$250" },
+        { "name": "Nuggets", "description": "Pollo crocante, miel picante", "price": "$280" }
+      ]
+    }
+  ],
+  "_comentario_reviews": "DATOS DE EJEMPLO — reemplazar por reseñas REALES (Google/Instagram) antes de mandar la demo. Si no hay reales, borrar el campo `reviews` y la sección desaparece sola. El CLAUDE.md prohíbe inventar reseñas.",
+  "reviews": [
+    { "author": "Martín R.", "text": "La mejor smash que probé en Montevideo. El pan brioche tostado en la plancha hace toda la diferencia.", "rating": 5, "date": "Marzo 2026" },
+    { "author": "Carolina P.", "text": "Pedimos por WhatsApp un viernes a las 11 de la noche y llegó en 25 minutos, caliente y bien armada.", "rating": 5, "date": "Febrero 2026" },
+    { "author": "Diego F.", "text": "La Oklahoma con la cebolla planchada contra el medallón es otro nivel. Volvimos tres veces en un mes.", "rating": 4, "date": "Febrero 2026" },
+    { "author": "Lucía M.", "text": "Fui por la vegana sin muchas expectativas y me sorprendió. Buena atención y el local tiene onda.", "rating": 5, "date": "Enero 2026" }
+  ],
+  "hours": [
+    { "day": "Lun a Jue", "open": "19:00 – 00:00" },
+    { "day": "Vie y Sáb", "open": "19:00 – 02:00" }
+  ],
+  "_comentario_gallery": "PLACEHOLDERS — reemplazar por fotos reales del local y borrar los SVG de web/public/hamburgueseria/galeria/.",
+  "gallery": [
+    "/hamburgueseria/galeria/placeholder-1.svg",
+    "/hamburgueseria/galeria/placeholder-2.svg",
+    "/hamburgueseria/galeria/placeholder-3.svg",
+    "/hamburgueseria/galeria/placeholder-4.svg",
+    "/hamburgueseria/galeria/placeholder-5.svg"
+  ],
+  "ordering": {
+    "steps": [
+      { "title": "Elegí lo tuyo", "description": "Mirá el menú y armá el pedido.", "icon": "menu" },
+      { "title": "Escribinos", "description": "Mandanos el pedido por WhatsApp. Te confirmamos al toque.", "icon": "whatsapp" },
+      { "title": "Sale caliente", "description": "Te avisamos cuando está pronto. Delivery o lo pasás a buscar.", "icon": "entrega" }
+    ],
+    "note": "Envíos en Pocitos y Punta Carretas."
+  },
+  "_meta": {
+    "hasWebsite": false,
+    "rating": 4.6,
+    "reviewCount": 210,
+    "scrapedAt": "2026-08-03",
+    "status": "nuevo"
+  }
+}

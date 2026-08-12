@@ -1,0 +1,66 @@
+/*
+ * Tokens de la plantilla `hamburgueseria` (Tailwind v4).
+ * Adaptado del sistema de Impossible Foods → hamburguesería nocturna.
+ *
+ * Cómo se usa: importar en el CSS global de la app cuando esta plantilla esté
+ * activa, o mergear estos tokens en el @theme global. Las fuentes se cargan con
+ * next/font/google (Anton, Inter, Space_Mono) y se exponen como variables CSS
+ * --font-display / --font-body / --font-mono desde el layout.
+ */
+
+@theme {
+  /* --- Colores --- */
+  --color-noche: #0A0A0F;       /* fondo base */
+  --color-carbon: #16121A;      /* superficies / cards */
+  --color-brasa: #E10600;       /* acción primaria + display + activo */
+  --color-queso: #FFB000;       /* acento comida — uso restringido */
+  --color-rescoldo: #FFC7C6;    /* texto secundario suave */
+  --color-negro: #000000;       /* nav, bordes, hairlines */
+  --color-hueso: #F5F3F0;       /* texto de cuerpo sobre oscuro */
+
+  /* --- Tipografía (familias) --- */
+  /* Estas variables las inyecta next/font desde el layout. */
+  --font-display: var(--font-anton), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-space-mono), ui-monospace, monospace;
+
+  /* --- Escala de tipo --- */
+  --text-caption: 10px;
+  --leading-caption: 1.4;
+  --text-body-sm: 14px;
+  --leading-body-sm: 1.4;
+  --text-body: 18px;
+  --leading-body: 1.4;
+  --text-subheading: 24px;
+  --leading-subheading: 1.15;
+  --text-heading-sm: 32px;
+  --leading-heading-sm: 1.1;
+  --text-heading: 48px;
+  --leading-heading: 0.95;
+  --text-heading-lg: 103px;
+  --leading-heading-lg: 0.95;
+  --text-display: 160px;
+  --leading-display: 0.95;
+  --tracking-display: 0.06em;
+
+  /* --- Espaciado --- */
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-20: 20px;
+  --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-40: 40px;
+  --spacing-56: 56px;
+  --spacing-64: 64px;
+  --spacing-80: 80px;
+  --spacing-100: 100px;
+  --spacing-148: 148px;
+
+  /* --- Border radius --- */
+  --radius-card: 12px;
+  --radius-button: 15px;
+  --radius-nav: 15px;
+  --radius-feature: 38px;
+}

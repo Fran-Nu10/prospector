@@ -1,0 +1,102 @@
+/**
+ * CONTRATO DE DATOS — el corazón del sistema.
+ *
+ * Todo el pipeline habla este idioma:
+ *   - El scraper produce objetos ClientData (parcialmente completos).
+ *   - Las plantillas consumen ClientData y NUNCA hardcodean contenido.
+ *   - Claude Code, al crear una plantilla nueva, respeta este contrato.
+ *
+ * Regla de oro: si un dato del negocio va a variar entre prospectos,
+ * VIVE ACÁ, nunca en el JSX de la plantilla.
+ */
+
+export type Vertical = "hamburgueseria" | "parrilla" | "cafe" | "generico";
+
+export interface MenuItem {
+  name: string;
+  description?: string;
+  price?: string;        // ej. "$450" — string para respetar formato local
+  image?: string;        // ruta relativa o URL
+  tag?: "destacado" | "nuevo" | "vegano" | "sin_tacc";
+}
+
+export interface MenuSection {
+  title: string;         // ej. "Hamburguesas", "Entradas"
+  items: MenuItem[];
+}
+
+/** Dato duro del negocio, para la fila de la sección "La historia". */
+export interface Highlight {
+  value: string;         // ej. "2021", "100%", "2 AM"
+  label: string;         // ej. "Desde", "Carne fresca", "Hasta"
+}
+
+/**
+ * Reseña de un cliente. OJO: el CLAUDE.md prohíbe inventar reseñas — este
+ * campo solo se completa con reseñas REALES (Google, Instagram, o pasadas a
+ * mano por el dueño). Las de `_ejemplo.json` son de muestra y no se copian a
+ * un prospecto real.
+ */
+export interface Review {
+  author: string;
+  text: string;
+  rating?: number;       // 1–5
+  date?: string;         // ej. "Marzo 2026" — string para respetar formato local
+}
+
+/** Paso de la sección "Cómo pedir". */
+export interface OrderStep {
+  title: string;
+  description?: string;
+  icon?: "menu" | "whatsapp" | "entrega" | "local";
+}
+
+export interface ClientData {
+  // --- Identidad (lo saca el scraper de Google Maps) ---
+  slug: string;                 // ej. "lapasiva-pocitos" — define el subdominio
+  name: string;                 // "La Pasiva Pocitos"
+  vertical: Vertical;           // decide qué plantilla se usa
+  tagline?: string;             // frase corta bajo el nombre
+
+  // --- Contacto y ubicación ---
+  phone?: string;               // teléfono de Maps
+  whatsapp?: string;            // número para el botón de pedidos
+  address?: string;
+  mapsUrl?: string;
+  instagram?: string;
+
+  // --- Branding (se completa manual o con IA) ---
+  logo?: string;
+  hero?: {
+    heading: string;
+    sub?: string;
+    image?: string;             // foto principal o poster del 3D
+    model3d?: string;           // .glb comprimido con Draco (opcional)
+    videoFallback?: string;     // video para mobile en vez del 3D
+  };
+
+  // --- Contenido ---
+  about?: string;
+  highlights?: Highlight[];     // datos duros que acompañan a `about`
+  menu?: MenuSection[];
+  reviews?: Review[];           // SOLO reseñas reales (ver interface Review)
+  hours?: { day: string; open: string }[];
+  gallery?: string[];
+  ordering?: {                  // sección "Cómo pedir"
+    steps: OrderStep[];
+    note?: string;              // ej. "Envíos en Pocitos y Punta Carretas"
+  };
+
+  // --- Metadatos del prospecto (uso interno) ---
+  // Excepción: `rating` y `reviewCount` SÍ se renderizan (sección de reseñas).
+  // Son dato real de Google que trae el scraper, no contenido inventado.
+  _meta?: {
+    hasWebsite: boolean;        // false = prospecto caliente
+    currentSiteUrl?: string;    // si tiene web vieja, su URL
+    screenshot?: string;        // captura del sitio actual
+    rating?: number;            // ⬅ renderizable
+    reviewCount?: number;       // ⬅ renderizable
+    scrapedAt?: string;
+    status?: "nuevo" | "demo_lista" | "enviado" | "respondio" | "cerrado";
+  };
+}
