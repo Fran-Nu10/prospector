@@ -1,8 +1,30 @@
 import { notFound } from "next/navigation";
-import { getProspectBySlug } from "@/lib/prospects";
+import { getAllProspects, getProspectBySlug } from "@/lib/prospects";
 import HamburgueseriaTemplate from "@templates/hamburgueseria/Template";
 
-export const dynamic = "force-dynamic";
+/*
+ * Las demos se prerenderizan en build, no por request.
+ *
+ * No es una optimización: es un requisito para que anden en producción. Los
+ * JSON de prospectos viven en `data/prospects/`, fuera de `web/`, y se leen
+ * del filesystem con una ruta calculada. En build ese directorio existe; en
+ * runtime, dentro de una función serverless, NO viaja con el bundle — Next no
+ * puede trazar una lectura que no puede analizar estáticamente. Con
+ * `force-dynamic` la lectura se hacía en cada request y toda demo respondía
+ * 404 en Vercel, aunque en local funcionara.
+ *
+ * Publicar un prospecto nuevo pide un redeploy. No se pierde nada: el
+ * filesystem de Vercel es inmutable, así que también lo pedía antes.
+ */
+
+/* Un slug que no existía en build responde 404 directo, sin intentar una
+ * lectura de disco que ya sabemos que no puede salir bien. */
+export const dynamicParams = false;
+
+export async function generateStaticParams() {
+  const prospects = await getAllProspects();
+  return prospects.map((p) => ({ slug: p.slug }));
+}
 
 /**
  * Elige la plantilla según data.vertical. Los verticales sin plantilla
