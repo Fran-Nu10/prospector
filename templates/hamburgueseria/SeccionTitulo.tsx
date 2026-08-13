@@ -1,62 +1,146 @@
 "use client";
 
-import { RevelarLineas } from "./RevelarLineas";
+import { RevelarBloque, RevelarLineas } from "./RevelarLineas";
+import { numeral } from "./tipografia";
 
 /*
  * Apertura de sección — el mayor lever de consistencia de la página.
  *
- * Antes cada sección abría distinto: el menú con un h2 Anton gigante, y
- * historia / galería / horarios con un eyebrow mono chiquito. A partir de acá
- * TODAS abren igual: eyebrow en mono brasa, título en Anton grande, sub
- * opcional en cuerpo — los tres entrando línea por línea, en cascada.
+ * Lenguaje de cartel de calle: la sección se anuncia con su numeral y su
+ * nombre en mono, una regla hairline negra que cruza hasta el borde del
+ * bloque, y recién después el titular en Anton. El numeral NO está
+ * hardcodeado: lo calcula la plantilla según qué secciones trajo el JSON, así
+ * una demo sin galería no saltea un número.
  *
  * La escala del título es la que pide el DESIGN.md ("Anton a 103px+ en hero y
- * aperturas de sección"): es el recurso gráfico del sistema, no un adorno.
- * Los títulos largos parten en dos líneas y el reveal las escalona — por eso
- * `leading-heading` (0.95) es innegociable, con menos las líneas se montan.
+ * aperturas de sección"). Los títulos largos parten en dos líneas y el reveal
+ * las escalona — por eso `leading-heading` (0.95) es innegociable, con menos
+ * las líneas se montan.
  */
 
-/* Cascada: el eyebrow abre, el título entra detrás, el sub cierra. */
+/* Cascada: la etiqueta abre, el título entra detrás, el sub cierra. */
 const RETRASO_TITULO = 0.1;
 const RETRASO_SUB = 0.26;
 
-export default function SeccionTitulo({
-  eyebrow,
-  titulo,
-  sub,
+const CLASE_TITULAR =
+  "font-display uppercase leading-heading tracking-[0.03em] text-hueso text-[clamp(48px,8vw,103px)]";
+
+/** Etiqueta de sección: "03 — MENÚ" en mono, con o sin regla. */
+export function EtiquetaSeccion({
+  numero,
+  texto,
+  regla = false,
   className = "",
 }: {
-  /** Kicker en mono brasa (ej. "La historia"). */
-  eyebrow?: string;
-  /** Título en Anton. */
-  titulo: string;
-  /** Bajada opcional en cuerpo. */
-  sub?: string;
+  numero?: number;
+  texto: string;
+  /** Hairline negra que corre desde la etiqueta hasta el borde del bloque. */
+  regla?: boolean;
   className?: string;
 }) {
   return (
+    <div className={`flex items-center gap-16 ${className}`}>
+      <span className="font-mono text-body-sm uppercase tracking-[0.22em] text-rescoldo">
+        {numero != null && `${numeral(numero)} — `}
+        {texto}
+      </span>
+      {regla && <span aria-hidden className="h-px flex-1 bg-negro" />}
+    </div>
+  );
+}
+
+/**
+ * Etiqueta rotada 90° contra el margen izquierdo. Vocabulario de póster: el
+ * dato se lee de costado y le deja todo el ancho al titular.
+ *
+ * Va dentro de un contenedor `relative`; el `origin-top-left` hace que rote
+ * hacia abajo sin salirse del margen.
+ */
+export function EtiquetaRotada({
+  numero,
+  texto,
+  className = "",
+}: {
+  numero?: number;
+  texto: string;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`absolute origin-top-left rotate-90 whitespace-nowrap font-mono text-[12px] uppercase tracking-[0.22em] text-rescoldo ${className}`}
+    >
+      {numero != null && `${numeral(numero)} — `}
+      {texto}
+    </span>
+  );
+}
+
+export default function SeccionTitulo({
+  numero,
+  eyebrow,
+  titulo,
+  remate,
+  sub,
+  regla = true,
+  sangrado = false,
+  className = "",
+}: {
+  /** Posición de la sección en la página; la calcula Template.tsx. */
+  numero?: number;
+  /** Nombre de la sección en mono (ej. "MENÚ"). */
+  eyebrow?: string;
+  /** Título en Anton. */
+  titulo: string;
+  /** Remate en brasa que cierra el titular, en la misma línea de texto. */
+  remate?: string;
+  /** Bajada opcional en cuerpo. */
+  sub?: string;
+  /** Hairline negra al lado de la etiqueta. */
+  regla?: boolean;
+  /** El titular sangra hacia afuera del ancho de contenido. */
+  sangrado?: boolean;
+  className?: string;
+}) {
+  const retrasoTitulo = eyebrow ? RETRASO_TITULO : 0;
+  const claseTitular = `${CLASE_TITULAR} ${
+    sangrado ? "ml-[-12px] md:ml-[-48px]" : ""
+  }`;
+
+  return (
     <div className={className}>
       {eyebrow && (
-        <RevelarLineas
-          enVista
+        <EtiquetaSeccion
+          numero={numero}
           texto={eyebrow}
-          className="font-mono text-body-sm uppercase tracking-[0.22em] text-brasa"
+          regla={regla}
+          className="mb-24"
         />
       )}
-      <RevelarLineas
-        enVista
-        as="h2"
-        texto={titulo}
-        retraso={eyebrow ? RETRASO_TITULO : 0}
-        desplazamiento={18}
-        className={`${eyebrow ? "mt-16" : ""} font-display uppercase leading-heading text-hueso text-[clamp(48px,8vw,103px)]`}
-      />
+      {/* Con remate el titular entra como bloque y no línea por línea: el
+          reveal por líneas necesita un único nodo de texto, y el remate rojo
+          tiene que quedar EN LA MISMA línea que la última palabra. */}
+      {remate ? (
+        <RevelarBloque enVista retraso={retrasoTitulo} desplazamiento={18}>
+          <h2 className={claseTitular}>
+            {titulo} <span className="text-brasa">{remate}</span>
+          </h2>
+        </RevelarBloque>
+      ) : (
+        <RevelarLineas
+          enVista
+          as="h2"
+          texto={titulo}
+          retraso={retrasoTitulo}
+          desplazamiento={18}
+          className={claseTitular}
+        />
+      )}
       {sub && (
         <RevelarLineas
           enVista
           texto={sub}
           retraso={eyebrow ? RETRASO_SUB : RETRASO_TITULO}
-          className="mt-16 max-w-[520px] text-body leading-body text-rescoldo"
+          className="mt-24 max-w-[520px] text-body leading-body text-rescoldo"
         />
       )}
     </div>

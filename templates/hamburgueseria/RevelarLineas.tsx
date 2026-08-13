@@ -76,6 +76,7 @@ export function RevelarLineas({
   texto,
   as: Tag = "p",
   className,
+  style,
   retraso = 0,
   paso = 0.06,
   desplazamiento = 14,
@@ -84,6 +85,12 @@ export function RevelarLineas({
   texto: string;
   as?: Etiqueta;
   className?: string;
+  /**
+   * Estilo inline del contenedor. Lo necesita el tipo display sangrado: su
+   * tamaño se calcula a partir de la cantidad de caracteres de la línea (ver
+   * tipografia.ts) y por eso no puede salir de una clase estática.
+   */
+  style?: React.CSSProperties;
   /** Retraso base del bloque, en segundos. */
   retraso?: number;
   /** Stagger entre líneas, en segundos. */
@@ -136,7 +143,11 @@ export function RevelarLineas({
   }, [reducirMovimiento]);
 
   if (sinMovimiento) {
-    return <Tag className={className}>{texto}</Tag>;
+    return (
+      <Tag className={className} style={style}>
+        {texto}
+      </Tag>
+    );
   }
 
   // Render de medición (y el que sale por SSR, idéntico en cliente y servidor).
@@ -149,7 +160,7 @@ export function RevelarLineas({
         ref={ref as React.Ref<never>}
         data-revelar=""
         className={className}
-        style={{ opacity: yaEntro.current ? 1 : 0 }}
+        style={{ ...style, opacity: yaEntro.current ? 1 : 0 }}
       >
         {texto}
       </Tag>
@@ -162,7 +173,7 @@ export function RevelarLineas({
   const visible = { opacity: 1, y: 0 };
 
   return (
-    <Tag ref={ref as React.Ref<never>} className={className}>
+    <Tag ref={ref as React.Ref<never>} className={className} style={style}>
       {lineas.map((linea, i) => (
         <motion.span
           key={`${i}-${linea}`}
@@ -202,12 +213,14 @@ export function RevelarLineas({
 export function RevelarBloque({
   children,
   className,
+  style,
   retraso = 0,
   desplazamiento = 14,
   enVista = false,
 }: {
   children: ReactNode;
   className?: string;
+  style?: React.CSSProperties;
   retraso?: number;
   desplazamiento?: number;
   enVista?: boolean;
@@ -221,6 +234,7 @@ export function RevelarBloque({
     <motion.div
       data-revelar=""
       className={className}
+      style={style}
       initial={{ opacity: 0, y: desplazamiento }}
       {...(enVista
         ? {
