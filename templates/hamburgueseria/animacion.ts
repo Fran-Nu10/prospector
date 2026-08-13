@@ -72,3 +72,39 @@ export const TRANSICION_BLOQUE = {
   duration: DURACION_BLOQUE,
   ease: EASE_BLOQUE,
 } as const;
+
+/* ---------------------------------------------------------------------------
+ * La firma — el momento estrella de la página.
+ * El hero ya no anima nada más que su cascada de texto: la burger del hero
+ * está quieta, cruzando el corredor entre las dos líneas del nombre. Todo el
+ * efecto de scroll vive en la firma.
+ * ------------------------------------------------------------------------ */
+
+/** Stagger entre capas cuando la firma se abre de una sola vez (mobile). */
+export const STAGGER_CAPAS = 0.1;
+
+/** Duración de la separación de una capa en mobile. */
+export const DURACION_CAPA = 0.7;
+
+/**
+ * Inclinación inicial de la vista explotada, en grados. Arranca mirada desde
+ * arriba —lenguaje de despiece técnico— y se resuelve en 0: el estado final
+ * es exactamente la composición plana del diseño.
+ */
+export const INCLINACION_FIRMA = 14;
+
+/**
+ * Tramo del progreso del pin en que viaja cada capa, de abajo hacia arriba:
+ * el pan de abajo se despega primero y el de arriba nunca se mueve.
+ */
+export function ventanaCapa(indice: number, total: number): [number, number] {
+  const desdeAbajo = total - 1 - indice;
+  const inicio = desdeAbajo * 0.08;
+  return [inicio, Math.min(1, inicio + 0.55)];
+}
+
+/** Recorrido del parallax de la galería, en px. */
+export const PARALLAX_GALERIA = 56;
+
+/** En mobile el parallax se reduce a un tercio (el scroll manda). */
+export const FACTOR_PARALLAX_MOBILE = 1 / 3;

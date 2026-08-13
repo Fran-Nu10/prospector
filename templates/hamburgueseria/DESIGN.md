@@ -93,17 +93,56 @@ feature-card destacada 38px.
 
 ---
 
-## Estructura de la página (mapeada a la construcción por scroll)
+## Las siete palancas del póster
 
-El hero abre con el pan base. Cada sección suma una capa de la hamburguesa:
+La página no mejora agregando elementos: el vacío es parte del diseño. Todo lo
+que sigue sale de estas siete palancas, y cualquier cambio futuro debería
+poder justificarse con alguna de ellas.
 
-1. **Hero** — pan base + nombre en Anton gigante rojo brasa. Eyebrow arriba.
-   Copy nocturno, no genérico. Ej: "LA QUE TE SALVA A LAS 2 AM".
-2. **Historia** — suma el medallón. Texto corto, tono de local.
-3. **Menú destacado** — suma queso + bacon. Precios en Space Mono, tag en ámbar.
-4. **Galería / ambiente** — suma la cebolla. Fotos en máscaras orgánicas irregulares.
-5. **Horarios + ubicación** — pan de arriba: la hamburguesa queda completa y gira suave.
-6. **Footer** — botón de WhatsApp fijo para pedidos (usa `data.whatsapp`).
+1. **Contraste de escala.** La distancia entre lo más grande y lo más chico de
+   cada sección tiene que ser brutal. Si un titular puede ser más grande, lo es.
+2. **Composición asimétrica.** Nada centrado por defecto: bloques desplazados,
+   alineaciones a un borde, columnas de anchos distintos.
+3. **Sangrado.** El display sale del ancho de contenido y se corta contra el
+   borde del viewport. Es deliberado, no un error.
+4. **Ritmo.** Secciones densas alternadas con secciones casi vacías. Dos
+   densas seguidas son un error de ritmo.
+5. **Superposición.** Tipo sobre imagen, imagen sobre bloque de color. Capas,
+   no cajas apiladas.
+6. **Lenguaje de póster.** Hairlines negras, numeración de sección, etiquetas
+   rotadas, reglas horizontales. Vocabulario de cartel de calle.
+7. **Espaciado agresivo.** En los respiros grandes, 100 y 148 antes que 40 y 56.
+
+---
+
+## Estructura de la página
+
+Orden fijo, con la densidad de cada sección — el ritmo es parte del diseño.
+Todas las secciones salvo el hero y la firma dependen de que el JSON traiga su
+dato: si falta, la sección no se renderiza y la numeración se recalcula sola
+(la calcula `Template.tsx`, no está escrita en cada componente).
+
+| # | Sección | Densidad | Qué la define |
+|---|---------|----------|---------------|
+| 01 | **Hero** | densa | El nombre partido en dos líneas que cortan contra los dos bordes, con la burger armada cruzando el corredor entre ellas — por el hueco y los contrafuertes, nunca por el centro de los caracteres. El CTA no flota: baja a una franja inferior con hairline, junto a horario y dirección en mono. |
+| 02 | **La firma** | densa | El despiece en 6 capas. Título por delante del pan, etiquetas de ingrediente colgadas de hairlines que apuntan a su capa, card del destacado abajo a la izquierda. **Es el momento estrella**: el scroll abre el despiece. |
+| 03 | **Menú** | densa | Grilla asimétrica: destacado con radio 38 (único lugar del sistema), dos cards en la columna angosta, y filas de 5/4/4 con la del medio descolgada 56px. |
+| 04 | **Historia** | **vacía** | El respiro. Titular de 103px con remate en brasa, relato chico y desplazado abajo a la derecha, y nada en el medio. Va pegada al menú a propósito. |
+| 05 | **Reseñas** | media | El rating en Anton gigante contra los testimonios en cuerpo; hairlines en vez de cards, con sangría creciente. |
+| 06 | **Galería** | imagen | Bloque de color plano sangrado y fotos superpuestas a distintas alturas, numeradas como lámina. El bloque alterna de lado cada tres fotos. |
+| 07 | **Cómo pedir** | media | Filas a ancho completo separadas por hairlines, con el numeral gigante haciendo de gráfico. |
+| 08 | **Horarios y ubicación** | datos | La hora de cierre a 160px contra la tabla en mono. Ese número se **deriva** de `hours` (ver `horarios.ts`), no se carga a mano. |
+| — | **Footer** | cierre | El nombre a tamaño de cartel recortado contra el borde inferior. |
+
+### Movimiento
+
+El hero está QUIETO: solo la cascada de entrada del texto. El único momento de
+efecto marcado es la firma, que se pinea y abre el despiece con el scroll; el
+resto de la página son entradas sutiles y el parallax corto de la galería.
+
+En ≤1023px el póster se recompone: la firma pierde el pin y la inclinación
+—las capas se separan de una vez al entrar en viewport, con menos recorrido— y
+la galería cae a una columna con el parallax reducido a un tercio.
 
 ---
 
@@ -114,10 +153,14 @@ El hero abre con el pan base. Cada sección suma una capa de la hamburguesa:
   legible — las líneas de un bloque nunca deben tocarse.
 - Reservá el rojo brasa SOLO para acción, estado activo y el display. Nunca en cuerpo.
 - El ámbar queso solo aparece con comida. Es la única segunda voz cromática.
-- Botones y pills a 15px de radio: lenguaje de forma unificado.
-- Fotos de comida en máscaras orgánicas irregulares cerca del display; rectángulos
-  limpios solo dentro de las cards de producto.
+- Botones y pills a 15px de radio: lenguaje de forma unificado. Sobre brasa
+  (el nombre del footer), con borde negro de 1px para que la pastilla no se funda.
+- Rectángulos limpios: la foto va arriba de la card y el texto abajo sobre
+  carbón plano. Nada de scrims ni degradados encima de la imagen.
 - Barra de nav negra sólida con texto blanco en todas las secciones: es el ancla visual.
+- El tipo display se dimensiona por CANTIDAD DE CARACTERES, no por breakpoint
+  (ver `tipografia.ts`): el nombre viene del JSON y tiene que sangrar igual
+  con 6 letras que con 26.
 
 ## Don'ts
 
@@ -127,6 +170,12 @@ El hero abre con el pan base. Cada sección suma una capa de la hamburguesa:
 - Anton no se usa por debajo de 40px ni para párrafos: es display, no lectura.
 - Nada de texto de cuerpo en rojo brasa: el rojo es para acción y remate de titular.
 - Fondo claro jamás: el negro nocturno es la base innegociable de la marca.
+- Nada de simular profundidad con blur ni sombras: la dan la superposición y
+  el recorte. Si hay que separar un objeto del fondo, va un bloque de color plano.
+- Nada de secciones nuevas. La mejora se busca recomponiendo, no agregando.
+- Nada de afirmar cosas del negocio que el JSON no respalde: el titular
+  nocturno de la historia, por ejemplo, solo aparece si los horarios muestran
+  que cierra después de medianoche.
 
 ---
 
