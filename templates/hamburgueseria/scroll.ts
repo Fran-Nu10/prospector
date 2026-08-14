@@ -4,14 +4,14 @@ import { useEffect, useState, type RefObject } from "react";
 import { useMotionValue, useSpring, type MotionValue } from "motion/react";
 
 /*
- * Progreso de scroll para los dos momentos que lo necesitan: el pin de la
- * firma y el parallax de la galería.
+ * Progreso de scroll para el parallax de la galería.
  *
- * Misma técnica que ya usaba la burger del hero: listener pasivo + rAF, UNA
- * sola lectura de layout por frame, y el movimiento después es puro
- * transform. Nada de `useScroll` de la librería acá: necesitamos apagar la
- * medición cuando la variante está oculta por CSS (display:none), y eso es
- * más claro con el listener a mano.
+ * El pin del hero NO usa esto: usa `useScroll` de la librería, que es la
+ * herramienta correcta para un track completo. Acá hace falta otra cosa —
+ * poder APAGAR la medición cuando la variante está oculta por CSS
+ * (`display:none`), porque en ese estado el elemento no tiene caja y medirlo
+ * es puro gasto. Por eso el listener pasivo + rAF a mano: una sola lectura de
+ * layout por frame, y el movimiento después es transform puro.
  */
 
 /** Rango de scroll medido: devuelve el progreso 0→1 crudo. */
@@ -46,30 +46,6 @@ function useProgresoCrudo(
   }, [activo, crudo]);
 
   return crudo;
-}
-
-/**
- * Progreso 0→1 de un track pineado: 0 cuando el sticky se pega arriba, 1
- * cuando el track termina de pasar. Suavizado con un spring para que el
- * movimiento no se sienta atado frame a frame a la rueda del mouse.
- */
-export function useProgresoPin(
-  trackRef: RefObject<HTMLElement | null>,
-  stickyRef: RefObject<HTMLElement | null>,
-  activo: boolean
-): MotionValue<number> {
-  const crudo = useProgresoCrudo(activo, () => {
-    const track = trackRef.current;
-    if (!track) return null;
-    // El recorrido real del pin es track − sticky: el sticky puede ser más
-    // bajo que el viewport, así que innerHeight no sirve.
-    const altoSticky = stickyRef.current?.offsetHeight ?? window.innerHeight;
-    const total = track.offsetHeight - altoSticky;
-    if (total <= 0) return 1;
-    return Math.min(1, Math.max(0, -track.getBoundingClientRect().top / total));
-  });
-
-  return useSpring(crudo, { stiffness: 90, damping: 24, restDelta: 0.001 });
 }
 
 /**
