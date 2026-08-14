@@ -47,6 +47,9 @@ Cada una con identidad propia. Acá va tu trabajo fuerte de diseño con Claude C
     # Web (una vez que exista el proyecto Next)
     cd web
     npm install
+    # Base de las URLs absolutas de la preview social (Open Graph / WhatsApp).
+    # Sin definirla usa el dominio de producción; en local conviene apuntarla acá.
+    export NEXT_PUBLIC_SITE_URL="http://localhost:3000"
     npm run dev        # ver demos en localhost:3000/<slug>
 
 ## Estado de un prospecto
