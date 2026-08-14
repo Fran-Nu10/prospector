@@ -9,6 +9,7 @@ import type {
 } from "../../web/lib/schema";
 import SeccionTitulo from "./SeccionTitulo";
 import { hrefPedirProducto, indiceInicial } from "./menu";
+import { useEsAngosto } from "./scroll";
 import {
   DESPLAZAMIENTO_FOTO,
   DURACION_EXPANSION,
@@ -172,6 +173,7 @@ function Fila({
   whatsapp,
   animado,
   compacta,
+  esAngosto,
 }: {
   item: MenuItem;
   indice: number;
@@ -181,6 +183,8 @@ function Fila({
   animado: boolean;
   /** Sección sin fotos: no hay panel que expandir ni columna visual. */
   compacta: boolean;
+  /** Por debajo de `lg`. Solo ahí existe la expansión. */
+  esAngosto: boolean;
 }) {
   const idPanel = useId();
   const href = hrefPedirProducto(whatsapp, item.name);
@@ -188,9 +192,34 @@ function Fila({
     item.name.length > LARGO_NOMBRE_CTA
       ? "Pedir este producto"
       : `Pedir ${item.name}`;
+  /* El botón solo existe donde hace algo: en una sección compacta no hay foto
+   * que cambiar ni panel que abrir, así que el numeral y el nombre van en un
+   * div y no se suma un control inerte al orden de foco. */
+  const interactivo = !compacta;
+  /* La expansión es exclusiva de mobile: anunciar `aria-expanded` en desktop
+   * describiría un panel que está en `display:none`. */
+  const expandible = interactivo && esAngosto;
+
+  const encabezado = (
+    <>
+      <span className="flex flex-wrap items-baseline gap-x-12 gap-y-4">
+        <span className="font-mono text-body-sm text-rescoldo">
+          {numeral(indice + 1)}
+        </span>
+        <Tag item={item} />
+      </span>
+      <span className="break-words font-display uppercase leading-heading tracking-display text-hueso text-[clamp(28px,7vw,32px)] lg:text-[clamp(36px,3vw,44px)]">
+        {item.name}
+      </span>
+    </>
+  );
 
   return (
     <motion.li
+      /* Gancho de la red de seguridad de `globals.css`: con
+         prefers-reduced-motion fuerza opacidad 1 aunque el observer no haya
+         corrido todavía, así la fila nunca queda invisible. */
+      data-revelar=""
       initial={OCULTO_FILA}
       whileInView={VISIBLE_FILA}
       viewport={VIEWPORT}
@@ -218,8 +247,10 @@ function Fila({
         />
       )}
 
+      {/* py-12 en mobile: con py-20 la fila cerrada se iba a ~113px, por
+          encima del rango de la carta. Desktop conserva su respiro. */}
       <div
-        className={`flex flex-col gap-8 py-20 ${
+        className={`flex flex-col gap-8 py-12 lg:py-20 ${
           compacta ? "" : "min-h-[88px] lg:min-h-[112px] lg:pl-24 lg:pr-8"
         }`}
       >
@@ -227,24 +258,22 @@ function Fila({
           {/* El botón selecciona el producto: en mobile abre su panel, en
               desktop cambia la fotografía de la izquierda. El CTA es un
               enlace HERMANO, nunca anidado dentro del botón. */}
-          <button
-            type="button"
-            onClick={onActivar}
-            onFocus={onActivar}
-            aria-expanded={compacta ? undefined : activo}
-            aria-controls={compacta ? undefined : idPanel}
-            className="flex min-w-0 flex-1 flex-col items-start gap-4 text-left"
-          >
-            <span className="flex flex-wrap items-baseline gap-x-12 gap-y-4">
-              <span className="font-mono text-body-sm text-rescoldo">
-                {numeral(indice + 1)}
-              </span>
-              <Tag item={item} />
-            </span>
-            <span className="break-words font-display uppercase leading-heading tracking-display text-hueso text-[clamp(28px,7vw,32px)] lg:text-[clamp(36px,3vw,44px)]">
-              {item.name}
-            </span>
-          </button>
+          {interactivo ? (
+            <button
+              type="button"
+              onClick={onActivar}
+              onFocus={onActivar}
+              aria-expanded={expandible ? activo : undefined}
+              aria-controls={expandible ? idPanel : undefined}
+              className="flex min-w-0 flex-1 flex-col items-start gap-4 text-left"
+            >
+              {encabezado}
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-4">
+              {encabezado}
+            </div>
+          )}
 
           <div className="flex shrink-0 flex-col items-end gap-8">
             {item.price && (
@@ -257,6 +286,10 @@ function Fila({
             {href && (
               <a
                 href={href}
+                /* Sin el aria-label, la lista de enlaces del lector de
+                   pantalla queda con ocho "Pedir" idénticos apuntando a
+                   productos distintos. */
+                aria-label={`Pedir ${item.name} por WhatsApp`}
                 className="inline-flex min-h-[44px] items-center rounded-button bg-brasa px-16 text-body-sm font-bold text-hueso lg:min-h-0 lg:bg-transparent lg:px-0 lg:text-rescoldo lg:underline lg:underline-offset-4 lg:hover:text-hueso"
               >
                 <span className="lg:hidden">Pedir</span>
@@ -280,9 +313,12 @@ function Fila({
       </div>
 
       {/* Panel de mobile: foto + CTA ancho. En desktop la foto vive en la
-          columna pegada, así que el panel entero se oculta. */}
-      {!compacta && (
-        <div id={idPanel} className="lg:hidden">
+          columna pegada, así que el panel NO SE MONTA: ocultarlo por CSS
+          bastaba para la vista, pero cada hover de escritorio montaba y
+          desmontaba un `<Image>` y una animación de altura que nadie iba a
+          ver, dentro de un subárbol invisible. */}
+      {expandible && (
+        <div id={idPanel}>
           <AnimatePresence initial={false}>
             {activo && (
               <motion.div
@@ -346,6 +382,9 @@ function SeccionCategoria({
    * en mobile qué producto está abierto. Arranca en el destacado del JSON. */
   const [activo, setActivo] = useState(() => indiceInicial(section.items));
   const conFotos = section.items.some((item) => item.image);
+  /* Decide solo ARIA y montaje del panel, nunca el layout: el layout lo
+   * resuelve CSS por breakpoint. */
+  const esAngosto = useEsAngosto();
 
   const filas = section.items.map((item, i) => (
     <Fila
@@ -357,6 +396,7 @@ function SeccionCategoria({
       whatsapp={whatsapp}
       animado={animado}
       compacta={!conFotos}
+      esAngosto={esAngosto}
     />
   ));
 
@@ -378,12 +418,12 @@ function SeccionCategoria({
             animado={animado}
           />
           {/* border-b: la última fila también cierra con hairline. */}
-          <ul className="border-b border-negro">{filas}</ul>
+          <ul role="list" className="border-b border-negro">{filas}</ul>
         </div>
       ) : (
         /* Sin fotos no hay columna visual que mostrar: lista compacta, hasta
            dos columnas en desktop. */
-        <ul className="mt-32 border-b border-negro lg:grid lg:grid-cols-2 lg:gap-x-40">
+        <ul role="list" className="mt-32 border-b border-negro lg:grid lg:grid-cols-2 lg:gap-x-40">
           {filas}
         </ul>
       )}
