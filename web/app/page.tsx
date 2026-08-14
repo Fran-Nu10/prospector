@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { getAllProspects } from "@/lib/prospects";
 
-export const dynamic = "force-dynamic";
+/* Mismo motivo que en `[slug]/page.tsx`: el índice también sale del
+ * filesystem, así que se resuelve en build. Con `force-dynamic` la lista
+ * salía vacía en producción. */
 
 export default async function Home() {
   const prospects = await getAllProspects();

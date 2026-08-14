@@ -67,6 +67,20 @@ export interface ClientData {
 
   // --- Branding (se completa manual o con IA) ---
   logo?: string;
+  /**
+   * Imagen de vista previa social: la que muestran WhatsApp, Open Graph y
+   * Twitter cuando se comparte el link de la demo.
+   *
+   * - Relación preferente 1.91:1 — 1200 × 630 px es la medida recomendada.
+   * - Puede ser una ruta pública local (`/hamburgueseria/...`, servida desde
+   *   `web/public/`) o una URL absoluta.
+   * - Se resuelve a absoluta contra `NEXT_PUBLIC_SITE_URL` (ver `lib/site.ts`).
+   *
+   * NO se infiere sola desde otra ruta del JSON: si el campo falta, la demo
+   * se comparte sin imagen. Es preferible una preview sin foto que una con el
+   * ícono de imagen rota, que es exactamente lo que delata una demo.
+   */
+  shareImage?: string;
   hero?: {
     heading: string;
     sub?: string;

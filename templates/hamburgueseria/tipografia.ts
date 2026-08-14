@@ -39,6 +39,19 @@ export function tamanoSangrado(
 }
 
 /**
+ * Le pone techo de ALTURA a un tamaño ya calculado por ancho.
+ *
+ * El sangrado solo mira el ancho del viewport, y eso alcanza mientras el
+ * póster fluye en el documento. Dentro de un viewport fijo de `100svh` no: en
+ * una pantalla ancha y baja, dos líneas dimensionadas por ancho no entran a lo
+ * alto. El tope se activa solo ahí; en mobile y en pantallas altas manda el
+ * ancho y el sangrado se conserva intacto.
+ */
+export function conTopeAlto(tamano: string, topeSvh: number): string {
+  return `min(${tamano}, ${topeSvh}svh)`;
+}
+
+/**
  * Parte el nombre en las dos líneas del hero, equilibradas por CANTIDAD DE
  * CARACTERES y no de palabras: "La Pasiva Pocitos" corta en "LA PASIVA" /
  * "POCITOS" y las dos líneas terminan con un tamaño parecido, que es lo que

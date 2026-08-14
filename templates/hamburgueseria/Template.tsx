@@ -1,7 +1,6 @@
 import type { ClientData } from "../../web/lib/schema";
 import Nav from "./Nav";
-import Hero from "./Hero";
-import Firma from "./Firma";
+import HeroExperience from "./HeroExperience";
 import MenuSeccion from "./MenuSeccion";
 import Historia from "./Historia";
 import Resenas from "./Resenas";
@@ -10,7 +9,6 @@ import ComoPedir from "./ComoPedir";
 import Horarios from "./Horarios";
 import PieDePagina from "./PieDePagina";
 import { itemDestacado } from "./menu";
-import { numeral } from "./tipografia";
 
 /*
  * Plantilla `hamburgueseria` — póster punk nocturno (ver DESIGN.md).
@@ -21,14 +19,17 @@ import { numeral } from "./tipografia";
  *
  * LA COMPOSICIÓN, en orden, y por qué ese orden:
  *
- *   01 Hero      denso    el nombre sangrando contra los dos bordes
- *   02 La firma  denso    el despiece — el momento estrella
- *   03 Menú      denso    la grilla asimétrica
- *   04 Historia  VACÍO    el respiro; sin él la página no tiene ritmo
- *   05 Reseñas   medio
- *   06 Galería   imagen
- *   07 Cómo pedir medio
- *   08 Horarios  datos
+ *   01 Hero      denso    el póster que se abre — el momento estrella
+ *   02 Menú      denso    la grilla asimétrica
+ *   03 Historia  VACÍO    el respiro; sin él la página no tiene ritmo
+ *   04 Reseñas   medio
+ *   05 Galería   imagen
+ *   06 Cómo pedir medio
+ *   07 Horarios  datos
+ *
+ * El hero y el despiece de la burger eran dos secciones separadas y ahora son
+ * una sola experiencia continua (ver HeroExperience.tsx): el scroll no cambia
+ * de sección, atraviesa la burger y desemboca en el menú.
  *
  * Dos secciones densas seguidas son un error de ritmo: por eso la historia
  * —la más vacía— va inmediatamente después del menú, que es la más cargada.
@@ -58,7 +59,6 @@ export default function Template({ data }: { data: ClientData }) {
   /* Numeración correlativa de lo que efectivamente se renderiza. */
   const presentes = [
     "hero",
-    "firma",
     tieneMenu && "menu",
     tieneHistoria && "historia",
     tieneResenas && "resenas",
@@ -79,9 +79,13 @@ export default function Template({ data }: { data: ClientData }) {
         tieneHorarios={tieneHorarios}
       />
 
-      <Hero data={data} numero={numeral(numero("hero"))} hrefPedido={hrefPedido} />
-
-      <Firma numero={numero("firma")} destacado={itemDestacado(menu)} />
+      <HeroExperience
+        data={data}
+        numero={numero("hero")}
+        hrefPedido={hrefPedido}
+        destacado={itemDestacado(menu)}
+        numeroMenu={tieneMenu ? numero("menu") : undefined}
+      />
 
       {tieneMenu && menu && (
         <MenuSeccion menu={menu} numero={numero("menu")} />
@@ -130,17 +134,13 @@ export default function Template({ data }: { data: ClientData }) {
         tieneHorarios={tieneHorarios}
       />
 
-      {/* Botón de pedidos fijo (mobile-first: siempre a mano). El borde negro
-          lo despega del nombre en brasa del footer, que pasa por debajo. */}
-      {hrefPedido && (
-        <a
-          href={hrefPedido}
-          aria-label="Pedir por WhatsApp"
-          className="fixed bottom-20 right-20 z-50 rounded-button border border-negro bg-brasa px-24 py-16 text-body-sm font-bold text-hueso"
-        >
-          Pedir por WhatsApp
-        </a>
-      )}
+      {/* El botón de pedidos FIJO está fuera de render a propósito: se
+          superponía con el CTA de la franja del hero —en mobile directamente
+          lo tapaba— y con el nombre en brasa del footer. La acción sigue
+          disponible en dos lugares permanentes: el CTA "Pedir" de la nav, que
+          es sticky, y el de la franja del hero. Si más adelante se quiere
+          recuperar, va con lógica de visibilidad (aparecer solo cuando ni la
+          nav ni la franja están en pantalla), no siempre encendido. */}
     </div>
   );
 }

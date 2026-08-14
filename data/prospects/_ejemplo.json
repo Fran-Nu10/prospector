@@ -8,6 +8,8 @@
   "address": "Av. Brasil 2500, Pocitos, Montevideo",
   "mapsUrl": "https://maps.google.com/?cid=123",
   "instagram": "@ejemploburger",
+  "_comentario_shareImage": "TEMPORAL — imagen de preview social. Todavía no hay un asset dedicado de 1200x630: esta es la foto del plato destacado, que es 1254x1254 (relación 1:1, no 1.91:1). Sirve para que la preview no salga rota, pero WhatsApp la va a recortar. Reemplazar por una imagen social propia del negocio antes de mandar la demo.",
+  "shareImage": "/hamburgueseria/platos/clasica.png",
   "hero": {
     "heading": "La smash que Pocitos estaba esperando",
     "sub": "Carne fresca, pan brioche, cero vueltas.",
