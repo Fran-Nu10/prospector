@@ -88,7 +88,11 @@ export default function Template({ data }: { data: ClientData }) {
       />
 
       {tieneMenu && menu && (
-        <MenuSeccion menu={menu} numero={numero("menu")} />
+        <MenuSeccion
+          menu={menu}
+          numero={numero("menu")}
+          whatsapp={data.whatsapp}
+        />
       )}
 
       {tieneHistoria && <Historia data={data} numero={numero("historia")} />}

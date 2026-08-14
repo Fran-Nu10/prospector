@@ -1,46 +1,53 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useLayoutEffect, useState } from "react";
-import { motion, useReducedMotion } from "motion/react";
+import { useEffect, useId, useLayoutEffect, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type {
   MenuItem,
   MenuSection as MenuSectionData,
 } from "../../web/lib/schema";
-import BordeVivo from "./BordeVivo";
 import SeccionTitulo from "./SeccionTitulo";
-import { ordenarConDestacado } from "./menu";
+import { hrefPedirProducto, indiceInicial } from "./menu";
 import {
-  DURACION_REPOSO,
+  DESPLAZAMIENTO_FOTO,
+  DURACION_EXPANSION,
+  DURACION_FILA,
+  DURACION_FOTO,
   EASE_BLOQUE,
-  LIFT_HOVER,
-  OCULTO,
+  OCULTO_FILA,
   VIEWPORT,
-  VISIBLE,
-  delayStagger,
-  transicionCard,
+  VISIBLE_FILA,
+  delayFila,
 } from "./animacion";
+import { numeral } from "./tipografia";
 
 /*
- * MENÚ — la segunda sección estrella.
+ * MENÚ — tracklist de la plancha.
  *
- * La grilla NO es pareja, y esa es toda la idea: un producto destacado ocupa
- * una columna entera con el radio de 38px —el único lugar del sistema donde
- * se usa—, dos cards lo acompañan en la columna angosta, y las siguientes van
- * en filas de anchos distintos (5/4/4) con la del medio DESCOLGADA 56px. Sin
- * ese desfasaje la grilla vuelve a leerse como una tabla.
+ * La carta NO es una grilla de cards. Es una lista numerada, con hairlines por
+ * separación y una sola fotografía a la vez: la del producto activo. Esa es
+ * toda la novedad de la composición, y no cuesta nada de comprensión — nombre,
+ * contenido, precio y cómo pedirlo están siempre a la vista, sin hover, sin
+ * abrir nada, sin aprender una interacción.
  *
- * La jerarquía es data-driven: el destacado es el primer ítem con tag
- * "destacado" de la sección. Sin destacado, la sección cae a filas de tres
- * —y la del medio sigue descolgada, que es lo que sostiene el ritmo.
+ * DESKTOP (`lg`+): pantalla partida. Columna izquierda con la foto pegada
+ * (sticky) mientras la lista de la derecha pasa por delante; hover o foco
+ * sobre una fila cambia la foto con un crossfade corto.
  *
- * La foto va ARRIBA y el texto abajo sobre carbón plano: nada de scrims ni
- * degradados sobre la imagen (el sistema es plano). El único brillo permitido
- * sigue siendo el borde vivo en hover (ver BordeVivo.tsx).
+ * MOBILE: la misma lista, plana. El producto activo se muestra expandido con
+ * su foto y su descripción; tocar otro cierra el anterior. El CTA chico vive
+ * en la fila cerrada: comprar NUNCA depende de expandir primero.
+ *
+ * UN SOLO ESTADO para las dos variantes (`activo`), y una sola lista en el
+ * DOM. Las piezas que solo corresponden a un ancho se ocultan por CSS, así que
+ * el lector de pantalla nunca escucha el contenido dos veces (`display:none`
+ * no llega al árbol de accesibilidad).
+ *
+ * SIN fotos inventadas: si un producto no tiene `image`, su lugar lo ocupa un
+ * fallback tipográfico con su numeral y su nombre. Si la sección entera no
+ * tiene fotos, no se renderiza columna visual: cae a lista compacta.
  */
-
-const useLayoutEffectSeguro =
-  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 const TAG_LABELS: Record<NonNullable<MenuItem["tag"]>, string> = {
   destacado: "La firma",
@@ -49,222 +56,337 @@ const TAG_LABELS: Record<NonNullable<MenuItem["tag"]>, string> = {
   sin_tacc: "Sin TACC",
 };
 
-/** Cuántas cards entran en una fila de la grilla asimétrica. */
-const POR_FILA = 3;
+/** Alto de la nav sticky + aire, para que la foto no se pegue a la barra. */
+const TOP_FOTO = 101;
 
-function enFilas<T>(items: T[], tamano: number): T[][] {
-  const filas: T[][] = [];
-  for (let i = 0; i < items.length; i += tamano) {
-    filas.push(items.slice(i, i + tamano));
-  }
-  return filas;
+/** A partir de acá el CTA largo no entra y se cae a una fórmula neutra. */
+const LARGO_NOMBRE_CTA = 16;
+
+const useLayoutEffectSeguro =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+/** Numeral y nombre en grande: lo que ve el producto activo cuando no hay foto. */
+function FallbackTipografico({
+  item,
+  indice,
+}: {
+  item: MenuItem;
+  indice: number;
+}) {
+  return (
+    <div className="flex h-full w-full flex-col justify-between bg-carbon p-32">
+      <span className="font-mono text-body-sm tracking-[0.22em] text-rescoldo">
+        {numeral(indice + 1)}
+      </span>
+      <span className="font-display uppercase leading-heading tracking-display text-hueso text-[clamp(40px,4vw,64px)]">
+        {item.name}
+      </span>
+    </div>
+  );
 }
 
-/** Kicker en ámbar: el acento de comida, y solo acá. */
-function Kicker({ item, grande }: { item: MenuItem; grande?: boolean }) {
+function Tag({ item }: { item: MenuItem }) {
   if (!item.tag) return null;
   return (
-    <span
-      className={`font-mono uppercase tracking-[0.22em] text-queso ${
-        grande ? "text-[12px]" : "text-caption"
-      }`}
-    >
+    <span className="font-mono text-caption uppercase tracking-[0.22em] text-queso">
       {TAG_LABELS[item.tag]}
     </span>
   );
 }
 
-function Foto({
-  item,
-  destacada,
+/* --------------------------------------------------------------------------
+ * Fotografía activa (desktop)
+ * ----------------------------------------------------------------------- */
+
+function FotoActiva({
+  items,
+  activo,
+  animado,
 }: {
-  item: MenuItem & { image: string };
-  destacada: boolean;
+  items: MenuItem[];
+  activo: number;
+  animado: boolean;
 }) {
-  return (
-    <div
-      className={`relative w-full overflow-hidden ${
-        destacada
-          ? "aspect-[3/2] lg:aspect-[824/460]"
-          : "aspect-[3/2] lg:aspect-[515/200]"
-      }`}
-    >
-      <Image
-        src={item.image}
-        alt={item.name}
-        fill
-        sizes={
-          destacada
-            ? "(min-width: 1024px) 824px, 92vw"
-            : "(min-width: 1024px) 420px, (min-width: 768px) 50vw, 92vw"
-        }
-        className="object-cover"
-      />
-    </div>
-  );
-}
+  const transicion = animado
+    ? { duration: DURACION_FOTO, ease: EASE_BLOQUE }
+    : { duration: 0 };
 
-function Contenido({ item, destacada }: { item: MenuItem; destacada: boolean }) {
   return (
-    <div
-      className={`flex flex-1 flex-col ${
-        destacada ? "gap-12 p-32" : "gap-8 p-24"
-      }`}
-    >
-      <Kicker item={item} grande={destacada} />
-      <h4
-        className={`break-words font-display uppercase leading-heading tracking-display text-hueso ${
-          destacada ? "text-[clamp(40px,4vw,48px)]" : "text-[40px]"
-        }`}
-      >
-        {item.name}
-      </h4>
-      {item.description && (
-        <p className="max-w-[480px] text-body-sm leading-body text-rescoldo">
-          {item.description}
-        </p>
-      )}
-      {item.price && (
-        <span
-          className={`mt-auto pt-16 font-mono font-bold text-hueso ${
-            destacada ? "text-subheading" : "text-body"
-          }`}
+    <div className="hidden lg:block">
+      <div className="sticky" style={{ top: TOP_FOTO }}>
+        {/* El techo de alto evita que en una pantalla baja la foto cuadrada
+            empuje la lista fuera del viewport. */}
+        <div
+          className="relative w-full overflow-hidden bg-carbon"
+          style={{
+            aspectRatio: "1 / 1",
+            maxHeight: `calc(100svh - ${TOP_FOTO + 40}px)`,
+          }}
         >
-          {item.price}
-        </span>
-      )}
+          {/* Las fotos de la sección se apilan y solo cambia su opacidad. Con
+              AnimatePresence la saliente se desmontaba y la entrante todavía
+              no había cargado: el crossfade mostraba un hueco. Apiladas, el
+              navegador ya las tiene y el cambio es instantáneo. No agrega
+              descargas respecto de la grilla anterior, que mostraba todas las
+              fotos del menú a la vez. */}
+          {items.map((item, i) => (
+            <motion.div
+              key={item.name}
+              aria-hidden={i !== activo}
+              className="absolute inset-0"
+              initial={false}
+              animate={{
+                opacity: i === activo ? 1 : 0,
+                y: i === activo ? 0 : DESPLAZAMIENTO_FOTO,
+              }}
+              transition={transicion}
+            >
+              {item.image ? (
+                <Image
+                  src={item.image}
+                  alt={item.name}
+                  fill
+                  sizes="(min-width: 1360px) 660px, 52vw"
+                  className="object-cover"
+                />
+              ) : (
+                <FallbackTipografico item={item} indice={i} />
+              )}
+            </motion.div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-function Card({
+/* --------------------------------------------------------------------------
+ * Fila de producto
+ * ----------------------------------------------------------------------- */
+
+function Fila({
   item,
   indice,
-  tactil,
+  activo,
+  onActivar,
+  whatsapp,
   animado,
-  destacada = false,
-  className = "",
+  compacta,
 }: {
   item: MenuItem;
   indice: number;
-  tactil: boolean;
+  activo: boolean;
+  onActivar: () => void;
+  whatsapp?: string;
   animado: boolean;
-  destacada?: boolean;
-  className?: string;
+  /** Sección sin fotos: no hay panel que expandir ni columna visual. */
+  compacta: boolean;
 }) {
-  const [hover, setHover] = useState(false);
-  /* El delay de stagger solo vale para la ENTRADA: como es la transición por
-   * defecto del componente, si quedara fijo también retrasaría la vuelta del
-   * lift al salir del hover (card colgada hasta 0.6s). */
-  const [entro, setEntro] = useState(false);
+  const idPanel = useId();
+  const href = hrefPedirProducto(whatsapp, item.name);
+  const ctaLargo =
+    item.name.length > LARGO_NOMBRE_CTA
+      ? "Pedir este producto"
+      : `Pedir ${item.name}`;
 
   return (
-    /* La entrada se declara SIEMPRE, aunque no haya movimiento: con reduced
-     * motion la duración cae a 0 y la card aparece directo en su estado
-     * final. Si en cambio se quitara `whileInView`, la card quedaría clavada
-     * en el estado inicial (opacidad 0) para siempre. */
     <motion.li
-      initial={OCULTO}
-      whileInView={VISIBLE}
+      initial={OCULTO_FILA}
+      whileInView={VISIBLE_FILA}
       viewport={VIEWPORT}
-      onAnimationComplete={() => setEntro(true)}
       transition={
-        !animado
-          ? { duration: 0 }
-          : entro
-            ? { duration: DURACION_REPOSO, ease: EASE_BLOQUE }
-            : transicionCard(indice)
+        animado
+          ? { duration: DURACION_FILA, ease: EASE_BLOQUE, delay: delayFila(indice) }
+          : { duration: 0 }
       }
-      whileHover={animado ? LIFT_HOVER : undefined}
-      onHoverStart={() => setHover(true)}
-      onHoverEnd={() => setHover(false)}
-      className={`relative overflow-hidden bg-negro p-px ${
-        destacada ? "rounded-feature" : "rounded-card"
-      } ${className}`}
+      /* El hover cambia la foto en desktop. El FOCO no se escucha acá sino en
+         el botón: si burbujeara desde el CTA, tabular hasta el enlace de una
+         fila cerrada en mobile abriría esa fila y colapsaría la anterior,
+         moviendo el layout bajo el foco del usuario. */
+      onMouseEnter={onActivar}
+      className={`relative border-t border-negro transition-colors ${
+        activo && !compacta ? "lg:bg-carbon" : ""
+      }`}
     >
-      {animado && (
-        <BordeVivo
-          tactil={tactil}
-          hover={hover}
-          delay={delayStagger(indice)}
+      {/* Indicador de fila activa: 4px de brasa contra el borde izquierdo. */}
+      {!compacta && (
+        <span
+          aria-hidden
+          className={`absolute bottom-0 left-0 top-0 hidden w-[4px] bg-brasa lg:block ${
+            activo ? "opacity-100" : "opacity-0"
+          }`}
         />
       )}
+
       <div
-        className={`relative z-[1] flex h-full flex-col overflow-hidden bg-carbon ${
-          destacada ? "rounded-[37px]" : "rounded-[11px]"
+        className={`flex flex-col gap-8 py-20 ${
+          compacta ? "" : "min-h-[88px] lg:min-h-[112px] lg:pl-24 lg:pr-8"
         }`}
       >
-        {item.image && (
-          <Foto item={item as MenuItem & { image: string }} destacada={destacada} />
+        <div className="flex items-start gap-16">
+          {/* El botón selecciona el producto: en mobile abre su panel, en
+              desktop cambia la fotografía de la izquierda. El CTA es un
+              enlace HERMANO, nunca anidado dentro del botón. */}
+          <button
+            type="button"
+            onClick={onActivar}
+            onFocus={onActivar}
+            aria-expanded={compacta ? undefined : activo}
+            aria-controls={compacta ? undefined : idPanel}
+            className="flex min-w-0 flex-1 flex-col items-start gap-4 text-left"
+          >
+            <span className="flex flex-wrap items-baseline gap-x-12 gap-y-4">
+              <span className="font-mono text-body-sm text-rescoldo">
+                {numeral(indice + 1)}
+              </span>
+              <Tag item={item} />
+            </span>
+            <span className="break-words font-display uppercase leading-heading tracking-display text-hueso text-[clamp(28px,7vw,32px)] lg:text-[clamp(36px,3vw,44px)]">
+              {item.name}
+            </span>
+          </button>
+
+          <div className="flex shrink-0 flex-col items-end gap-8">
+            {item.price && (
+              <span className="font-mono text-body-sm font-bold text-hueso lg:text-body">
+                {item.price}
+              </span>
+            )}
+            {/* CTA chico: visible SIEMPRE, también con la fila cerrada.
+                Comprar no puede depender de expandir primero. */}
+            {href && (
+              <a
+                href={href}
+                className="inline-flex min-h-[44px] items-center rounded-button bg-brasa px-16 text-body-sm font-bold text-hueso lg:min-h-0 lg:bg-transparent lg:px-0 lg:text-rescoldo lg:underline lg:underline-offset-4 lg:hover:text-hueso"
+              >
+                <span className="lg:hidden">Pedir</span>
+                <span className="hidden lg:inline">Pedir esta</span>
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* La descripción es UN SOLO nodo: en desktop siempre visible, en
+            mobile solo con la fila abierta. Duplicarla rompería la lectura. */}
+        {item.description && (
+          <p
+            className={`max-w-[52ch] text-body-sm leading-body text-rescoldo ${
+              compacta || activo ? "block" : "hidden"
+            } lg:block ${compacta ? "" : "lg:pl-24"}`}
+          >
+            {item.description}
+          </p>
         )}
-        <Contenido item={item} destacada={destacada} />
       </div>
+
+      {/* Panel de mobile: foto + CTA ancho. En desktop la foto vive en la
+          columna pegada, así que el panel entero se oculta. */}
+      {!compacta && (
+        <div id={idPanel} className="lg:hidden">
+          <AnimatePresence initial={false}>
+            {activo && (
+              <motion.div
+                key="panel"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={
+                  animado
+                    ? { duration: DURACION_EXPANSION, ease: EASE_BLOQUE }
+                    : { duration: 0 }
+                }
+                className="overflow-hidden"
+              >
+                <div className="flex flex-col gap-16 pb-24">
+                  <div className="relative aspect-[3/2] w-full overflow-hidden bg-carbon">
+                    {item.image ? (
+                      <Image
+                        src={item.image}
+                        alt={item.name}
+                        fill
+                        sizes="92vw"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <FallbackTipografico item={item} indice={indice} />
+                    )}
+                  </div>
+                  {href && (
+                    <a
+                      href={href}
+                      className="flex min-h-[44px] w-full items-center justify-center rounded-button bg-brasa px-24 text-body font-bold text-hueso"
+                    >
+                      {ctaLargo}
+                    </a>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
     </motion.li>
   );
 }
 
-function GrillaSeccion({
+/* --------------------------------------------------------------------------
+ * Sección (una categoría del JSON)
+ * ----------------------------------------------------------------------- */
+
+function SeccionCategoria({
   section,
-  tactil,
+  whatsapp,
   animado,
 }: {
   section: MenuSectionData;
-  tactil: boolean;
+  whatsapp?: string;
   animado: boolean;
 }) {
-  const { destacado, resto } = ordenarConDestacado(section.items);
-  /* La columna angosta lleva dos cards apiladas contra la destacada; el
-   * row-span solo tiene sentido si hay con qué llenarla. */
-  const columna = destacado ? resto.slice(0, 2) : [];
-  const filas = enFilas(destacado ? resto.slice(2) : resto, POR_FILA);
-  let indice = 0;
+  /* Un solo estado para las dos variantes: en desktop decide qué foto se ve,
+   * en mobile qué producto está abierto. Arranca en el destacado del JSON. */
+  const [activo, setActivo] = useState(() => indiceInicial(section.items));
+  const conFotos = section.items.some((item) => item.image);
+
+  const filas = section.items.map((item, i) => (
+    <Fila
+      key={item.name}
+      item={item}
+      indice={i}
+      activo={i === activo}
+      onActivar={() => setActivo(i)}
+      whatsapp={whatsapp}
+      animado={animado}
+      compacta={!conFotos}
+    />
+  ));
 
   return (
-    <div className="mt-64">
-      <h3 className="font-display uppercase leading-heading tracking-display text-brasa text-[40px]">
+    <div className="mt-80 md:mt-100">
+      <h3 className="font-display uppercase leading-heading tracking-display text-brasa text-[clamp(40px,5vw,48px)]">
         {section.title}
       </h3>
 
-      {destacado && (
-        <ul className="mt-24 grid gap-20 lg:grid-cols-[8fr_5fr]">
-          <Card
-            item={destacado}
-            destacada
-            indice={indice++}
-            tactil={tactil}
+      {conFotos ? (
+        /* SIN `items-start`: la columna de la foto tiene que ESTIRARSE hasta
+           el alto de la lista. Si el ítem de grilla se encoge al alto de su
+           contenido, el sticky se queda sin recorrido y la foto se va con el
+           scroll en vez de quedarse pegada — que es todo el concepto. */
+        <div className="mt-32 lg:grid lg:grid-cols-[52fr_48fr] lg:gap-40">
+          <FotoActiva
+            items={section.items}
+            activo={activo}
             animado={animado}
-            className={columna.length === 2 ? "lg:row-span-2" : ""}
           />
-          {columna.map((item) => (
-            <Card
-              key={item.name}
-              item={item}
-              indice={indice++}
-              tactil={tactil}
-              animado={animado}
-            />
-          ))}
+          {/* border-b: la última fila también cierra con hairline. */}
+          <ul className="border-b border-negro">{filas}</ul>
+        </div>
+      ) : (
+        /* Sin fotos no hay columna visual que mostrar: lista compacta, hasta
+           dos columnas en desktop. */
+        <ul className="mt-32 border-b border-negro lg:grid lg:grid-cols-2 lg:gap-x-40">
+          {filas}
         </ul>
       )}
-
-      {filas.map((fila, f) => (
-        <ul
-          key={f}
-          className="mt-20 grid gap-20 lg:grid-cols-[5fr_4fr_4fr]"
-        >
-          {fila.map((item, i) => (
-            <Card
-              key={item.name}
-              item={item}
-              indice={indice++}
-              tactil={tactil}
-              animado={animado}
-              /* La del medio cuelga: es el desfasaje que rompe la tabla. */
-              className={i === 1 ? "lg:mt-56" : ""}
-            />
-          ))}
-        </ul>
-      ))}
     </div>
   );
 }
@@ -272,24 +394,20 @@ function GrillaSeccion({
 export default function MenuSeccion({
   menu,
   numero,
+  whatsapp,
 }: {
   menu: MenuSectionData[];
   numero: number;
+  /** Número del prospecto. Sin él no se renderiza ningún CTA de pedido. */
+  whatsapp?: string;
 }) {
   const reducirMovimiento = useReducedMotion();
-
-  /* Sin hover real (táctil), el borde vivo se enciende una vez al entrar la
-   * card al viewport en lugar de esperar un hover que nunca llega. */
-  const [tactil, setTactil] = useState(false);
-  /* La preferencia de movimiento no existe en el servidor: se decide después
-   * del montaje para no romper la hidratación (ver RevelarLineas). */
+  /* La preferencia no existe en el servidor: se decide tras el montaje para
+   * no romper la hidratación (ver RevelarLineas). */
   const [sinMovimiento, setSinMovimiento] = useState(false);
   useLayoutEffectSeguro(() => {
     if (reducirMovimiento) setSinMovimiento(true);
   }, [reducirMovimiento]);
-  useEffect(() => {
-    setTactil(window.matchMedia("(hover: none)").matches);
-  }, []);
 
   return (
     <section
@@ -304,10 +422,10 @@ export default function MenuSeccion({
           sangrado
         />
         {menu.map((section) => (
-          <GrillaSeccion
+          <SeccionCategoria
             key={section.title}
             section={section}
-            tactil={tactil}
+            whatsapp={whatsapp}
             animado={!sinMovimiento}
           />
         ))}

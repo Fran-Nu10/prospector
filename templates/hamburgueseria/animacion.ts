@@ -80,6 +80,36 @@ export const TRANSICION_BLOQUE = {
  * secuencia, no vocabulario compartido por la página.
  * ------------------------------------------------------------------------ */
 
+/* ---------------------------------------------------------------------------
+ * Menú — deliberadamente CALMO.
+ *
+ * Viene inmediatamente después del hero, que es el momento estrella de la
+ * página: si acá también pasa de todo, ninguno de los dos destaca. Entrada
+ * mínima de filas, cambio de foto corto, y nada de hover lift, borde vivo ni
+ * movimiento decorativo permanente.
+ * ------------------------------------------------------------------------ */
+
+/** Entrada de una fila del menú: apenas un empujón. */
+export const OCULTO_FILA = { opacity: 0, y: 16 };
+export const VISIBLE_FILA = { opacity: 1, y: 0 };
+
+/** Stagger entre filas, con techo para que las últimas no lleguen tarde. */
+export function delayFila(i: number): number {
+  return Math.min(i * 0.055, 0.33);
+}
+
+/** Duración de la entrada de una fila. */
+export const DURACION_FILA = 0.42;
+
+/** Crossfade de la fotografía activa. */
+export const DURACION_FOTO = 0.22;
+
+/** Desplazamiento vertical del crossfade de la foto, en px. */
+export const DESPLAZAMIENTO_FOTO = 12;
+
+/** Apertura/cierre del producto en mobile. */
+export const DURACION_EXPANSION = 0.28;
+
 /** Recorrido del parallax de la galería, en px. */
 export const PARALLAX_GALERIA = 56;
 
