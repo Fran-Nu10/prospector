@@ -175,8 +175,15 @@ export const MOBILE = {
   factorSeparacion: 0.55,
   /** Tope de deriva horizontal: 2vw sobre un máximo desktop de 4vw. */
   factorDeriva: 0.5,
-  /** La salida también se acorta: la pantalla es más chica. */
-  factorSalida: 0.7,
+  /**
+   * La salida se acorta bastante más que el resto. No es sólo que la pantalla
+   * sea más chica: en mobile no hay anticipación del menú, así que la salida
+   * se estira hasta el final del track (ver `finSalida` en HeroExperience) y
+   * con el recorrido de desktop las capas despejaban el viewport cerca de 0.93
+   * y dejaban un tramo de negro antes de soltarse el sticky. Con este valor
+   * la última capa termina de cruzar el borde prácticamente en 1.
+   */
+  factorSalida: 0.45,
 } as const;
 
 /* ---------------------------------------------------------------------------

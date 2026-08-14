@@ -198,6 +198,21 @@ export default function HeroExperience({
     hayArmada && animado ? [0, 1] : [1, 1]
   );
 
+  /* El claim se despide antes que el resto del póster y como una sola unidad
+   * (heading + sub juntos). Solo en mobile: en desktop el bloque no cambió de
+   * sitio ni de tiempos, y moverlo sería un cambio visual que no se pidió. */
+  const claimAnimado = animado && esAngosto;
+  const yClaim = useTransform(
+    progreso,
+    r([0.08, 0.2]),
+    claimAnimado ? [0, -24] : [0, 0]
+  );
+  const opacidadClaim = useTransform(
+    progreso,
+    r([0.08, 0.2]),
+    claimAnimado ? [1, 0] : [1, 1]
+  );
+
   const opacidadRotulo = useTransform(
     progreso,
     r([ESCENAS.despejeFin, 0.34, 0.52, ESCENAS.aperturaFin]),
@@ -351,23 +366,32 @@ export default function HeroExperience({
               </span>
             </div>
 
-            <div className="mt-auto flex justify-end px-20 md:px-40">
-              {data.hero?.heading && (
-                <div className="max-w-[560px] text-right">
-                  <p className="font-display uppercase leading-heading tracking-display text-rescoldo text-[clamp(32px,4vw,48px)]">
+            {/* El claim cambia de sitio según el ancho, pero es UN SOLO nodo:
+                en mobile va arriba, en el aire que queda entre la fila de
+                tagline y la primera línea del nombre —abajo pisaba la palabra
+                en brasa—; desde `lg` vuelve al pie, a la derecha, exactamente
+                como estaba. El `mt-auto` que empuja el bloque hacia abajo se
+                muda al indicador en mobile. */}
+            {data.hero?.heading && (
+              <motion.div
+                className="flex px-20 pt-8 md:px-40 lg:mt-auto lg:justify-end lg:pt-0"
+                style={{ y: yClaim, opacity: opacidadClaim }}
+              >
+                <div className="max-w-[340px] text-left lg:max-w-[560px] lg:text-right">
+                  <p className="font-display uppercase leading-heading tracking-display text-rescoldo text-[clamp(28px,8vw,36px)] lg:text-[clamp(32px,4vw,48px)]">
                     {data.hero.heading}
                   </p>
                   {data.hero.sub && (
-                    <p className="mt-12 text-body-sm leading-body text-rescoldo">
+                    <p className="mt-8 text-body-sm leading-body text-rescoldo lg:mt-12">
                       {data.hero.sub}
                     </p>
                   )}
                 </div>
-              )}
-            </div>
+              </motion.div>
+            )}
 
             <motion.span
-              className="mt-16 block px-20 font-mono text-caption uppercase tracking-[0.22em] text-rescoldo md:px-40"
+              className="mt-auto block px-20 font-mono text-caption uppercase tracking-[0.22em] text-rescoldo md:px-40 lg:mt-16"
               style={{ opacity: opacidadIndicador }}
             >
               {INDICADOR}
@@ -441,11 +465,18 @@ export default function HeroExperience({
         )}
 
         {/* ---------- Anticipación del menú ----------
-            aria-hidden: el encabezado real vive en la sección del menú. */}
+            aria-hidden: el encabezado real vive en la sección del menú.
+
+            Oculta por debajo de `lg`: en una pantalla angosta se comía un
+            viewport entero de negro para anunciar la sección que aparece
+            inmediatamente después, y se leía como una pantalla duplicada. En
+            mobile las capas salen hasta el final del track y el menú real
+            entra apenas se suelta el sticky. Se oculta por CSS y no por JS
+            para que no dependa de una media query resuelta tras el montaje. */}
         {numeroMenu != null && (
           <motion.div
             aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-1/2 z-[4] -translate-y-1/2 px-20 text-center md:px-40"
+            className="pointer-events-none absolute inset-x-0 top-1/2 z-[4] hidden -translate-y-1/2 px-20 text-center md:px-40 lg:block"
             style={{ opacity: opacidadMenu }}
           >
             <span className="font-mono text-body-sm uppercase tracking-[0.22em] text-rescoldo">
@@ -488,12 +519,18 @@ function CapaBurger({
   const salida = `${(paso.salidaVh * factorSalida).toFixed(2)}vh`;
   const deriva = `${(paso.derivaVw * factorDeriva).toFixed(2)}vw`;
 
+  /* En desktop la salida termina antes del final del track para dejarle lugar
+   * a la anticipación del menú. En mobile esa anticipación no existe, así que
+   * la salida se estira hasta el final: si terminara en 0.94 quedaría un
+   * tramo de fondo negro con nada antes de soltarse el sticky. */
+  const finSalida = esAngosto ? 1 : ESCENAS.atravesarFin;
+
   /* Un solo motion value encadena apertura y salida: la capa se separa, se
    * queda quieta mientras la cámara entra, y recién después sale de cuadro. */
   const y = useTransform(
     progreso,
     animado
-      ? [0, paso.apertura[0], paso.apertura[1], ESCENAS.acercamientoFin, ESCENAS.atravesarFin]
+      ? [0, paso.apertura[0], paso.apertura[1], ESCENAS.acercamientoFin, finSalida]
       : [0, 1],
     animado
       ? ["0vh", "0vh", separacion, separacion, salida]
