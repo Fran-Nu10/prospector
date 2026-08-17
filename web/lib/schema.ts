@@ -100,6 +100,40 @@ export interface ClientData {
     videoFallback?: string;     // video para mobile en vez del 3D
   };
 
+  /**
+   * Sección "Plancha viva": la ventana de video que se abre a pantalla
+   * completa después del menú.
+   *
+   * Es OPCIONAL y su ausencia hace desaparecer la sección entera — no hay
+   * versión degradada con texto genérico. Todo lo que varía entre negocios
+   * (titular, claims, videos, poster, rótulo del CTA) vive acá y nunca en el
+   * JSX de la plantilla.
+   *
+   * Los videos se declaran por viewport y se pide UNO SOLO: la plantilla
+   * elige según el ancho, nunca descarga los dos. Sin videos cargados, la
+   * sección muestra un placeholder explícito de desarrollo.
+   */
+  planchaViva?: {
+    /** Kicker en mono sobre el titular. */
+    eyebrow?: string;
+    /** Titular editorial de la sección. Obligatorio si la sección existe. */
+    headline: string;
+    /** Bajada opcional en cuerpo. */
+    body?: string;
+    /** Hasta tres frases cortas. Deben salir de lo que el negocio ya dice. */
+    claims?: string[];
+    /** Video ancho (`lg`+). Loop corto, sin audio. */
+    desktopVideo?: string;
+    /** Video vertical para pantallas angostas. */
+    mobileVideo?: string;
+    /** Primer cuadro del video ancho; es lo que se ve con reduced motion. */
+    desktopPoster?: string;
+    /** Primer cuadro del video vertical. */
+    mobilePoster?: string;
+    /** Texto del CTA. Sin él, la plantilla usa su rótulo por defecto. */
+    ctaLabel?: string;
+  };
+
   // --- Contenido ---
   about?: string;
   highlights?: Highlight[];     // datos duros que acompañan a `about`
