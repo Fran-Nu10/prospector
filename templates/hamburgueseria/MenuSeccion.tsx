@@ -9,7 +9,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import {
+  AnimatePresence,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  useScroll,
+  useTransform,
+  type MotionValue,
+} from "motion/react";
 import type {
   MenuItem,
   MenuSection as MenuSectionData,
@@ -54,6 +62,42 @@ import { numeral } from "./tipografia";
  * Las categorías sin fotografías no entran al carrusel: caen a la lista
  * compacta, que para acompañamientos es la lectura correcta.
  */
+
+/* ---------------------------------------------------------------------------
+ * HANDOFF DEL HERO — configuración recalibrable.
+ *
+ * El hero termina con la burger saliendo de cuadro y suelta su sticky: durante
+ * ese último viewport la pantalla se vacía. Antes ahí no pasaba nada y el menú
+ * arrancaba abajo, después de un encabezado alto: se leía como otra landing.
+ *
+ * Ahora ese tramo lo ocupa la ENTRADA REAL del carrusel. No hay sección
+ * intermedia, no hay copia del primer producto: es el mismo `<li>` con el que
+ * después se interactúa, movido por transform hasta su posición definitiva.
+ *
+ * Reloj único: el progreso del viewport de la sección —0 cuando su borde
+ * superior toca el pie de la pantalla, 1 cuando llega al techo—, que es
+ * exactamente el tramo en que el hero se despide.
+ * ------------------------------------------------------------------------ */
+
+/** Tramos del progreso de entrada, 0→1. */
+export const HANDOFF = {
+  producto: [0, 0.44],
+  eyebrow: [0.1, 0.34],
+  titulo: [0.14, 0.4],
+  info: [0.34, 0.54],
+  controles: [0.46, 0.62],
+} as const;
+
+/** Estado inicial del producto: hereda la inercia vertical del hero. */
+export const ENTRADA_PRODUCTO = {
+  y: ["22svh", "0svh"],
+  scale: [0.82, 1],
+  rotateX: [8, 0],
+  opacity: [0.75, 1],
+} as const;
+
+/** Rango neutro: el motion value queda declarado pero no se mueve. */
+const QUIETO: [number, number] = [0, 1];
 
 const TAG_LABELS: Record<NonNullable<MenuItem["tag"]>, string> = {
   destacado: "La firma",
@@ -191,6 +235,7 @@ function Ficha({
   onAlternar,
   whatsapp,
   animado,
+  entrada,
 }: {
   item: MenuItem & { image: string };
   indice: number;
@@ -199,8 +244,22 @@ function Ficha({
   onAlternar: () => void;
   whatsapp?: string;
   animado: boolean;
+  /** Solo el primer slide la recibe: es el que hereda el movimiento del hero. */
+  entrada?: MotionValue<number>;
 }) {
   const idPanel = useId();
+  /* El hook va siempre; lo que cambia es de dónde lee. Sin entrada, la ficha
+   * arranca en su estado final y no se mueve. */
+  const quieto = useMotionValue(1);
+  const conEntrada = Boolean(entrada) && animado;
+  const reloj = entrada ?? quieto;
+  const rangoInfo = conEntrada ? [...HANDOFF.info] : [...QUIETO];
+  const opacidadInfo = useTransform(
+    reloj,
+    rangoInfo,
+    conEntrada ? [0, 1] : [1, 1]
+  );
+  const yInfo = useTransform(reloj, rangoInfo, conEntrada ? [18, 0] : [0, 0]);
   const href = hrefPedirProducto(whatsapp, item.name);
   const ingredientes = item.ingredients ?? [];
   const tieneIngredientes = ingredientes.length > 0;
@@ -257,7 +316,12 @@ function Ficha({
           </AnimatePresence>
         </div>
 
-        <div className="mt-24 flex flex-col gap-12">
+        {/* Nombre, precio y CTA entran apenas atrás del producto: cierran el
+            handoff con un stagger corto y ahí la ficha queda quieta. */}
+        <motion.div
+          className="mt-24 flex flex-col gap-12"
+          style={{ opacity: opacidadInfo, y: yInfo }}
+        >
           <Tag item={item} />
           <h4 className="break-words font-display uppercase leading-heading tracking-display text-hueso text-[clamp(40px,11vw,48px)] lg:text-[clamp(48px,3.6vw,64px)]">
             {item.name}
@@ -293,7 +357,7 @@ function Ficha({
               {abierto ? "Cerrar ×" : "Ver ingredientes +"}
             </button>
           )}
-        </div>
+        </motion.div>
       </div>
     </li>
   );
@@ -307,10 +371,16 @@ function Carrusel({
   section,
   whatsapp,
   animado,
+  entrada,
+  margen = "mt-32",
 }: {
   section: MenuSectionData;
   whatsapp?: string;
   animado: boolean;
+  /** Progreso del handoff, solo en la vitrina que recibe al hero. */
+  entrada?: MotionValue<number>;
+  /** Separación con lo que viene arriba; el handoff la comprime. */
+  margen?: string;
 }) {
   const conFoto = section.items.filter(
     (item): item is MenuItem & { image: string } => Boolean(item.image)
@@ -407,12 +477,29 @@ function Carrusel({
     }
   }, [indice]);
 
+  /* Los controles cierran la entrada: aparecen cuando el producto ya está en
+   * su sitio, no antes, o el carrusel invita a moverse mientras todavía llega. */
+  const quieto = useMotionValue(1);
+  const conEntrada = Boolean(entrada) && animado;
+  const reloj = entrada ?? quieto;
+  const rangoControles = conEntrada ? [...HANDOFF.controles] : [...QUIETO];
+  const opacidadControles = useTransform(
+    reloj,
+    rangoControles,
+    conEntrada ? [0, 1] : [1, 1]
+  );
+  const yControles = useTransform(
+    reloj,
+    rangoControles,
+    conEntrada ? [12, 0] : [0, 0]
+  );
+
   return (
     <div
       role="group"
       aria-roledescription="carrusel"
       aria-label={`${section.title} — ${total} productos`}
-      className="mt-32"
+      className={margen}
     >
       <ul
         ref={pistaRef}
@@ -431,13 +518,17 @@ function Carrusel({
             onAlternar={() => setAbierto((prev) => (prev === i ? null : i))}
             whatsapp={whatsapp}
             animado={animado}
+            entrada={i === 0 ? entrada : undefined}
           />
         ))}
       </ul>
 
       {/* Control: la flecha derecha se ve desde el primer producto y es lo que
           comunica que hay más. Sin dots y sin "deslizá". */}
-      <div className="mt-24 flex items-center justify-center gap-24">
+      <motion.div
+        className="mt-24 flex items-center justify-center gap-24"
+        style={{ opacity: opacidadControles, y: yControles }}
+      >
         <BotonFlecha
           direccion="anterior"
           onClick={() => irA(indice - 1)}
@@ -457,7 +548,7 @@ function Carrusel({
           onClick={() => irA(indice + 1)}
           deshabilitado={alFinal}
         />
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -602,6 +693,133 @@ function SeccionCategoria({
   );
 }
 
+/* --------------------------------------------------------------------------
+ * Handoff: plano tipográfico + escenario del primer producto
+ * ----------------------------------------------------------------------- */
+
+function PlanoTitulo({
+  numero,
+  categoria,
+  progreso,
+  animado,
+}: {
+  numero: number;
+  /** Nombre de la categoría de la vitrina: comparte fila con el numeral. */
+  categoria: string;
+  progreso: MotionValue<number>;
+  animado: boolean;
+}) {
+  const r = (rango: readonly number[]): number[] =>
+    animado ? [...rango] : [...QUIETO];
+
+  const opacidadEyebrow = useTransform(
+    progreso,
+    r(HANDOFF.eyebrow),
+    animado ? [0, 1] : [1, 1]
+  );
+  const opacidadTitulo = useTransform(
+    progreso,
+    r(HANDOFF.titulo),
+    animado ? [0, 1] : [1, 1]
+  );
+  const yTitulo = useTransform(
+    progreso,
+    r(HANDOFF.titulo),
+    animado ? [48, 0] : [0, 0]
+  );
+
+  return (
+    /* z-0: es el plano de fondo. El producto le pasa por delante y lo recorta,
+       que es de dónde sale la profundidad; por eso el titular se revela ANTES
+       de que el producto termine de bajar. */
+    <div className="relative z-0">
+      <motion.div
+        className="flex items-baseline gap-16"
+        style={{ opacity: opacidadEyebrow }}
+      >
+        <span className="shrink-0 font-mono text-body-sm uppercase tracking-[0.22em] text-rescoldo">
+          {numeral(numero)} — Menú
+        </span>
+        <span aria-hidden className="h-px flex-1 bg-negro" />
+        {/* La categoría comparte fila con el numeral en vez de ocupar su propio
+            bloque: es lo que libera el alto para que la burger entre en la
+            primera pantalla. */}
+        <h3 className="shrink-0 font-display uppercase leading-heading tracking-display text-brasa text-[clamp(20px,4.6vw,44px)]">
+          {categoria}
+        </h3>
+      </motion.div>
+
+      <motion.h2
+        className="ml-[-12px] mt-16 font-display uppercase leading-heading tracking-[0.03em] text-hueso text-[clamp(48px,8vw,103px)] md:ml-[-48px]"
+        style={{ opacity: opacidadTitulo, y: yTitulo }}
+      >
+        El menú
+      </motion.h2>
+    </div>
+  );
+}
+
+function EscenarioVitrina({
+  section,
+  whatsapp,
+  animado,
+  progreso,
+}: {
+  section: MenuSectionData;
+  whatsapp?: string;
+  animado: boolean;
+  progreso: MotionValue<number>;
+}) {
+  const r = (rango: readonly number[]): number[] =>
+    animado ? [...rango] : [...QUIETO];
+  const v = <T,>(par: readonly [T, T], quieto: readonly [T, T]) =>
+    animado ? [...par] : [...quieto];
+
+  const rango = r(HANDOFF.producto);
+  const y = useTransform(
+    progreso,
+    rango,
+    v(ENTRADA_PRODUCTO.y, ["0svh", "0svh"])
+  );
+  const scale = useTransform(progreso, rango, v(ENTRADA_PRODUCTO.scale, [1, 1]));
+  const rotateX = useTransform(
+    progreso,
+    rango,
+    v(ENTRADA_PRODUCTO.rotateX, [0, 0])
+  );
+  const opacity = useTransform(
+    progreso,
+    rango,
+    v(ENTRADA_PRODUCTO.opacity, [1, 1])
+  );
+
+  return (
+    /* El margen negativo es el montaje sobre el titular: la ventana del
+       producto le tapa el pie y el titular sigue leyéndose entero arriba. Hoy
+       las fotos son cuadradas y opacas sobre negro —se funden con el fondo—;
+       el día que sean recortes con alfa, la burger va a flotar sobre el tipo
+       sin tocar una línea de este componente. */
+    <motion.div
+      className="relative z-[1] -mt-[28px] md:-mt-[32px]"
+      style={{
+        y,
+        scale,
+        rotateX,
+        opacity,
+        transformOrigin: "50% 0%",
+      }}
+    >
+      <Carrusel
+        section={section}
+        whatsapp={whatsapp}
+        animado={animado}
+        entrada={progreso}
+        margen="mt-16"
+      />
+    </motion.div>
+  );
+}
+
 export default function MenuSeccion({
   menu,
   numero,
@@ -617,25 +835,72 @@ export default function MenuSeccion({
   useLayoutEffectSeguro(() => {
     if (reducirMovimiento) setSinMovimiento(true);
   }, [reducirMovimiento]);
+  const animado = !sinMovimiento;
+
+  /* Reloj único del handoff. El tramo es el viewport que el hero tarda en
+   * despedirse: `start end` es la sección asomando por el pie, `start start`
+   * es la sección ya apoyada arriba. Ese offset no coincide con ningún preset
+   * de Motion, así que no hay traspaso a ViewTimeline nativa: lo mueve JS y el
+   * progreso es el que se mide (verificado con un barrido). */
+  const seccionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: seccionRef,
+    offset: ["start end", "start start"],
+  });
+
+  /* La vitrina que recibe al hero es la primera categoría con fotos: es la
+   * única que puede presentar un producto, y el dato manda sobre el orden. */
+  const indiceVitrina = menu.findIndex((s) => s.items.some((i) => i.image));
+  const vitrina = indiceVitrina >= 0 ? menu[indiceVitrina] : null;
+  const resto = menu.filter((_, i) => i !== indiceVitrina);
 
   return (
     <section
+      ref={seccionRef}
       id="menu"
-      className="scroll-mt-64 bg-noche px-20 py-100 md:px-40 md:pb-148"
+      /* El aire de arriba es corto a propósito: es lo que hace que el producto
+         entre en la primera pantalla en vez de dejar un encabezado solo. */
+      /* `scroll-mt` = alto de la nav sticky + aire: al entrar por #menu el
+         encabezado tiene que quedar POR DEBAJO de la barra, no tapado. */
+      className="scroll-mt-[100px] bg-noche px-20 pb-100 pt-40 md:px-40 md:pb-148 md:pt-64"
     >
-      <div className="mx-auto max-w-[1360px]">
-        <SeccionTitulo
-          numero={numero}
-          eyebrow="Menú"
-          titulo="El menú"
-          sangrado
-        />
-        {menu.map((section) => (
+      {/* La perspectiva vive en un contenedor estático: animarla obligaría a
+          recalcular el contexto 3D en cada frame. Sin movimiento no se declara
+          siquiera: no hay nada que proyectar. */}
+      <div
+        className="mx-auto max-w-[1360px]"
+        style={animado ? { perspective: "1200px" } : undefined}
+      >
+        {vitrina ? (
+          <>
+            <PlanoTitulo
+              numero={numero}
+              categoria={vitrina.title}
+              progreso={scrollYProgress}
+              animado={animado}
+            />
+            <EscenarioVitrina
+              section={vitrina}
+              whatsapp={whatsapp}
+              animado={animado}
+              progreso={scrollYProgress}
+            />
+          </>
+        ) : (
+          <SeccionTitulo
+            numero={numero}
+            eyebrow="Menú"
+            titulo="El menú"
+            sangrado
+          />
+        )}
+
+        {resto.map((section) => (
           <SeccionCategoria
             key={section.title}
             section={section}
             whatsapp={whatsapp}
-            animado={!sinMovimiento}
+            animado={animado}
           />
         ))}
       </div>

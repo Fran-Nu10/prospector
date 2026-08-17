@@ -93,7 +93,6 @@ export default function Template({ data }: { data: ClientData }) {
         numero={numero("hero")}
         hrefPedido={hrefPedido}
         destacado={itemDestacado(menu)}
-        numeroMenu={tieneMenu ? numero("menu") : undefined}
       />
 
       {tieneMenu && menu && (
