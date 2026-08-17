@@ -2,6 +2,7 @@ import type { ClientData } from "../../web/lib/schema";
 import Nav from "./Nav";
 import HeroExperience from "./HeroExperience";
 import MenuSeccion from "./MenuSeccion";
+import PlanchaViva from "./PlanchaViva";
 import Historia from "./Historia";
 import Resenas from "./Resenas";
 import Galeria from "./Galeria";
@@ -19,13 +20,19 @@ import { itemDestacado } from "./menu";
  *
  * LA COMPOSICIÓN, en orden, y por qué ese orden:
  *
- *   01 Hero      denso    el póster que se abre — el momento estrella
- *   02 Menú      denso    la grilla asimétrica
- *   03 Historia  VACÍO    el respiro; sin él la página no tiene ritmo
- *   04 Reseñas   medio
- *   05 Galería   imagen
- *   06 Cómo pedir medio
- *   07 Horarios  datos
+ *   01 Hero          denso    el póster que se abre — el momento estrella
+ *   02 Menú          denso    el carrusel de productos
+ *   03 Plancha viva  denso    la ventana de video que se abre — segundo pico
+ *   04 Historia      VACÍO    el respiro; sin él la página no tiene ritmo
+ *   05 Reseñas       medio
+ *   06 Galería       imagen
+ *   07 Cómo pedir    medio
+ *   08 Horarios      datos
+ *
+ * OJO con el orden: "Acompañamientos" NO es una sección, es una categoría más
+ * dentro de `MenuSeccion` —comparte el `<section id="menu">` con el carrusel—,
+ * así que Plancha viva no puede intercalarse entre ambas sin partir el menú.
+ * Va después del bloque de menú completo.
  *
  * El hero y el despiece de la burger eran dos secciones separadas y ahora son
  * una sola experiencia continua (ver HeroExperience.tsx): el scroll no cambia
@@ -48,6 +55,7 @@ export default function Template({ data }: { data: ClientData }) {
   const hrefPedido = data.whatsapp ? waHref(data.whatsapp) : undefined;
 
   const tieneMenu = Boolean(menu?.length);
+  const tienePlancha = Boolean(data.planchaViva?.headline);
   const tieneHistoria = Boolean(data.about || data.highlights?.length);
   const tieneResenas = Boolean(reviews?.length);
   const tieneGaleria = Boolean(gallery?.length);
@@ -60,6 +68,7 @@ export default function Template({ data }: { data: ClientData }) {
   const presentes = [
     "hero",
     tieneMenu && "menu",
+    tienePlancha && "plancha",
     tieneHistoria && "historia",
     tieneResenas && "resenas",
     tieneGaleria && "galeria",
@@ -92,6 +101,17 @@ export default function Template({ data }: { data: ClientData }) {
           menu={menu}
           numero={numero("menu")}
           whatsapp={data.whatsapp}
+        />
+      )}
+
+      {/* Va inmediatamente después del menú: es el segundo pico visual y
+          necesita el ancho completo del viewport, así que no puede vivir
+          dentro de la sección del menú (ver nota de composición arriba). */}
+      {tienePlancha && data.planchaViva && (
+        <PlanchaViva
+          plancha={data.planchaViva}
+          numero={numero("plancha")}
+          hrefPedido={hrefPedido}
         />
       )}
 

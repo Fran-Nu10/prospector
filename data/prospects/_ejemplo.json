@@ -17,6 +17,21 @@
     "model3d": "/models/burger.glb",
     "videoFallback": "/video/burger-mobile.mp4"
   },
+  "_comentario_planchaViva": "Dos videos de origen distintos, uno por viewport: el ancho es un 4K horizontal reencodeado a 1600x900, y el vertical es una toma propia 2160x3840 reencodeada a 810x1440 (no es un recorte del horizontal). Ambos van sin audio. Los posters son el primer cuadro de cada corte. Los claims salen de la bajada del hero que ya estaba en este JSON — no se inventó nada del negocio.",
+  "planchaViva": {
+    "eyebrow": "En la plancha",
+    "headline": "Todo empieza en la plancha",
+    "claims": [
+      "Carne fresca",
+      "Pan brioche",
+      "Cero vueltas"
+    ],
+    "desktopVideo": "/hamburgueseria/plancha/plancha-desktop.mp4",
+    "mobileVideo": "/hamburgueseria/plancha/plancha-mobile.mp4",
+    "desktopPoster": "/hamburgueseria/plancha/plancha-desktop.jpg",
+    "mobilePoster": "/hamburgueseria/plancha/plancha-mobile.jpg",
+    "ctaLabel": "Pedir la tuya"
+  },
   "about": "Arrancamos en 2021 con una plancha y una idea fija: la mejor smash de la zona.",
   "highlights": [
     {
