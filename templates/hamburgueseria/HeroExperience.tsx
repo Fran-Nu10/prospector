@@ -22,6 +22,7 @@ import {
   ESCALA_DESKTOP,
   ESCALA_MOBILE,
   ESCENAS,
+  FACTOR_SALIDA,
   INCLINACION_DESKTOP,
   MOBILE,
   TIEMPOS_ESCALA,
@@ -45,8 +46,7 @@ import { conTopeAlto, dividirNombre, numeral, tamanoSangrado } from "./tipografi
  *     ├ nombre sangrado en dos líneas
  *     ├ burger: imagen armada + stack de seis capas
  *     ├ CAPA POR CAPA
- *     ├ producto del menú
- *     └ anticipación del menú
+ *     └ producto del menú
  *
  * REGLAS DE MOVIMIENTO
  *
@@ -69,8 +69,6 @@ const useLayoutEffectSeguro =
 const INDICADOR = "Scroll para abrir";
 const ROTULO_APERTURA = "Capa por capa";
 const KICKER_PRODUCTO = "Del menú";
-const EYEBROW_MENU = "Menú";
-const TITULO_MENU = "El menú";
 
 /** Techo de altura del display dentro del viewport fijo (ver tipografia.ts). */
 const TOPE_LINEA_SVH = 35;
@@ -83,7 +81,6 @@ export default function HeroExperience({
   numero,
   hrefPedido,
   destacado,
-  numeroMenu,
 }: {
   data: ClientData;
   /** Numeral de la sección, calculado por la plantilla. */
@@ -92,8 +89,6 @@ export default function HeroExperience({
   hrefPedido?: string;
   /** Ítem destacado del menú — lo elige el JSON, no la plantilla. */
   destacado: MenuItem | null;
-  /** Numeral del menú, para la anticipación del final. */
-  numeroMenu?: number;
 }) {
   const reducirMovimiento = useReducedMotion();
   const esAngosto = useEsAngosto();
@@ -223,12 +218,6 @@ export default function HeroExperience({
     r([ESCENAS.aperturaFin, 0.66, ESCENAS.acercamientoFin, 0.88]),
     animado ? [0, 1, 1, 0] : [0, 0]
   );
-  const opacidadMenu = useTransform(
-    progreso,
-    r([ESCENAS.atravesarFin, 0.985]),
-    animado ? [0, 1] : [0, 0]
-  );
-
   /* El póster apagado no debe seguir recibiendo clicks. No es animación: es
    * un valor derivado, y va por motion value para no re-renderizar. */
   const punteroPoster = useTransform(progreso, (v) =>
@@ -463,30 +452,6 @@ export default function HeroExperience({
             )}
           </motion.div>
         )}
-
-        {/* ---------- Anticipación del menú ----------
-            aria-hidden: el encabezado real vive en la sección del menú.
-
-            Oculta por debajo de `lg`: en una pantalla angosta se comía un
-            viewport entero de negro para anunciar la sección que aparece
-            inmediatamente después, y se leía como una pantalla duplicada. En
-            mobile las capas salen hasta el final del track y el menú real
-            entra apenas se suelta el sticky. Se oculta por CSS y no por JS
-            para que no dependa de una media query resuelta tras el montaje. */}
-        {numeroMenu != null && (
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-1/2 z-[4] hidden -translate-y-1/2 px-20 text-center md:px-40 lg:block"
-            style={{ opacity: opacidadMenu }}
-          >
-            <span className="font-mono text-body-sm uppercase tracking-[0.22em] text-rescoldo">
-              {numeral(numeroMenu)} — {EYEBROW_MENU}
-            </span>
-            <p className="mt-16 font-display uppercase leading-heading tracking-[0.03em] text-hueso text-[clamp(48px,8vw,103px)]">
-              {TITULO_MENU}
-            </p>
-          </motion.div>
-        )}
       </div>
     </section>
   );
@@ -512,18 +477,16 @@ function CapaBurger({
   const paso = COREOGRAFIA[indice];
 
   const factorSep = esAngosto ? MOBILE.factorSeparacion : 1;
-  const factorSalida = esAngosto ? MOBILE.factorSalida : 1;
+  const factorSalida = esAngosto ? FACTOR_SALIDA.mobile : FACTOR_SALIDA.desktop;
   const factorDeriva = esAngosto ? MOBILE.factorDeriva : 1;
 
   const separacion = `${(paso.separacionVh * factorSep).toFixed(2)}vh`;
   const salida = `${(paso.salidaVh * factorSalida).toFixed(2)}vh`;
   const deriva = `${(paso.derivaVw * factorDeriva).toFixed(2)}vw`;
 
-  /* En desktop la salida termina antes del final del track para dejarle lugar
-   * a la anticipación del menú. En mobile esa anticipación no existe, así que
-   * la salida se estira hasta el final: si terminara en 0.94 quedaría un
-   * tramo de fondo negro con nada antes de soltarse el sticky. */
-  const finSalida = esAngosto ? 1 : ESCENAS.atravesarFin;
+  /* La salida termina con el track, en los dos anchos: cualquier valor menor
+   * dejaría un tramo final de negro antes de soltarse el sticky. */
+  const finSalida = ESCENAS.atravesarFin;
 
   /* Un solo motion value encadena apertura y salida: la capa se separa, se
    * queda quieta mientras la cámara entra, y recién después sale de cuadro. */

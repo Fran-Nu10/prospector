@@ -96,8 +96,16 @@ export const ESCENAS = {
   aperturaFin: 0.58,
   /** 4 · Acercamiento: la cámara entra entre las capas. */
   acercamientoFin: 0.82,
-  /** 5 · Atravesar: las capas salen del viewport. */
-  atravesarFin: 0.94,
+  /**
+   * 5 · Atravesar: las capas salen del viewport.
+   *
+   * Termina EN 1, no antes. Hasta la versión anterior cerraba en 0.94 para
+   * dejarle el último tramo del track a una anticipación del menú que ya no
+   * existe (el menú se presenta una sola vez, en su propia sección). Con la
+   * anticipación fuera, cualquier valor menor a 1 deja un tramo de track sin
+   * nada que mirar.
+   */
+  atravesarFin: 1,
 } as const;
 
 /* ---------------------------------------------------------------------------
@@ -175,16 +183,22 @@ export const MOBILE = {
   factorSeparacion: 0.55,
   /** Tope de deriva horizontal: 2vw sobre un máximo desktop de 4vw. */
   factorDeriva: 0.5,
-  /**
-   * La salida se acorta bastante más que el resto. No es sólo que la pantalla
-   * sea más chica: en mobile no hay anticipación del menú, así que la salida
-   * se estira hasta el final del track (ver `finSalida` en HeroExperience) y
-   * con el recorrido de desktop las capas despejaban el viewport cerca de 0.93
-   * y dejaban un tramo de negro antes de soltarse el sticky. Con este valor
-   * la última capa termina de cruzar el borde prácticamente en 1.
-   */
-  factorSalida: 0.45,
 } as const;
+
+/**
+ * Cuánto del recorrido nominal de salida se usa realmente, por viewport.
+ *
+ * `salidaVh` es un destino NOMINAL: se aplica dentro del wrapper escalado, y
+ * al final del acercamiento la escala anda por 3.2 (desktop) y 2.3 (mobile),
+ * así que el recorrido aparente es varias veces mayor. Con el factor en 1 las
+ * capas despejaban el viewport a mitad de camino —medido: la última salía en
+ * 0.88 de 1 en 1440×900— y el resto del track quedaba en negro. Estos factores
+ * estiran la salida para que la última capa cruce el borde casi en 1.
+ *
+ * Se recalibran MIDIENDO (barrido de progreso contra los rects de las capas),
+ * no a ojo.
+ */
+export const FACTOR_SALIDA = { desktop: 0.4, mobile: 0.5 } as const;
 
 /* ---------------------------------------------------------------------------
  * GEOMETRÍA EN PANTALLA
