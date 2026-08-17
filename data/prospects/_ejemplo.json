@@ -169,13 +169,13 @@
       "open": "19:00 – 02:00"
     }
   ],
-  "_comentario_gallery": "PLACEHOLDERS — reemplazar por fotos reales del local y borrar los SVG de web/public/hamburgueseria/galeria/.",
+  "_comentario_gallery": "Fotos de ambientación de hamburgueserías, NO del local de este prospecto: sirven para que la demo de ejemplo no se vea vacía. Para un prospecto real hay que reemplazarlas por fotos del negocio (el CLAUDE.md prohíbe pasar material ajeno como propio). El orden importa: la lámina de desktop tiene tres ranuras —apaisada, vertical, apaisada— y la primera foto es la única nativamente apaisada.",
   "gallery": [
-    "/hamburgueseria/galeria/placeholder-1.svg",
-    "/hamburgueseria/galeria/placeholder-2.svg",
-    "/hamburgueseria/galeria/placeholder-3.svg",
-    "/hamburgueseria/galeria/placeholder-4.svg",
-    "/hamburgueseria/galeria/placeholder-5.svg"
+    "/hamburgueseria/galeria/local-01-salon-garage.jpg",
+    "/hamburgueseria/galeria/local-02-cartel-burger.jpg",
+    "/hamburgueseria/galeria/local-03-bano-mural.jpg",
+    "/hamburgueseria/galeria/local-04-salon-boxes.jpg",
+    "/hamburgueseria/galeria/local-05-frente.jpg"
   ],
   "ordering": {
     "steps": [
