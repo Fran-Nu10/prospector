@@ -18,6 +18,17 @@ export interface MenuItem {
   price?: string;        // ej. "$450" — string para respetar formato local
   image?: string;        // ruta relativa o URL
   tag?: "destacado" | "nuevo" | "vegano" | "sin_tacc";
+  /**
+   * Ingredientes del producto, uno por entrada y con el nombre tal como lo
+   * dice el negocio ("Cheddar fundido", no "cheddar").
+   *
+   * Es contenido OPCIONAL: la plantilla lo muestra como anatomía desplegable
+   * y nunca esconde ahí nada esencial —foto, nombre, precio y pedido están
+   * siempre a la vista—. Sin este campo, el producto simplemente no ofrece el
+   * despliegue. No se deduce partiendo `description`: separar por comas
+   * inventaría ingredientes donde hay una frase.
+   */
+  ingredients?: string[];
 }
 
 export interface MenuSection {
