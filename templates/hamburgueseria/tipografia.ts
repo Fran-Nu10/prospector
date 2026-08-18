@@ -81,6 +81,20 @@ export function dividirNombre(nombre: string): string[] {
   ];
 }
 
+/**
+ * Tamaño del nombre del producto que va DETRÁS de la burger en la vitrina.
+ *
+ * Mismo criterio que el sangrado del hero —el ancho de la mancha depende de
+ * cuántos caracteres tiene el nombre— pero acotado por arriba y por abajo: el
+ * plano tiene que seguir siendo un plano, ni desaparecer con "Doble Doble" ni
+ * comerse la sección con "Verde".
+ */
+export function tamanoNombreProducto(nombre: string): string {
+  const caracteres = Math.max(nombre.trim().length, 1);
+  const divisor = (caracteres * AVANCE_ANTON).toFixed(2);
+  return `clamp(72px, min(12vw, calc(96vw / ${divisor})), 190px)`;
+}
+
 /** Numeral de sección del póster: 1 → "01". */
 export function numeral(n: number): string {
   return String(n).padStart(2, "0");

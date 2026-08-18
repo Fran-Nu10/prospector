@@ -29,6 +29,25 @@ export interface MenuItem {
    * inventaría ingredientes donde hay una frase.
    */
   ingredients?: string[];
+  /**
+   * Recorte del producto CON ALFA, para la vitrina del menú: la burger flota
+   * sobre el negro de la página, sin caja ni fondo propio.
+   *
+   * Es distinto de `image`, que es la foto cuadrada con fondo. Los dos
+   * conviven a propósito durante la migración: el producto que todavía no
+   * tiene recorte sigue mostrando su foto vieja como fallback, y la vitrina no
+   * finge transparencia por CSS.
+   *
+   * Se genera con `scripts/normalizar_productos_menu.py` a partir del PNG de
+   * `assets/hamburgueseria/productos-source/`: WebP RGBA de 1600×1600 con el
+   * producto centrado ópticamente.
+   *
+   * SLOT FUTURO (todavía NO en el contrato): cuando existan capas reales por
+   * ingrediente, van a hacer falta `ingredientLayers` (un recorte por capa) y
+   * `ingredientAnchors` (dónde ancla cada etiqueta). Hasta tener los assets no
+   * se agregan campos: un contrato con campos que nadie puede llenar miente.
+   */
+  stageImage?: string;
 }
 
 export interface MenuSection {
