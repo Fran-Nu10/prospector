@@ -62,7 +62,8 @@
           ],
           "price": "$490",
           "tag": "destacado",
-          "image": "/hamburgueseria/platos/clasica.png"
+          "image": "/hamburgueseria/platos/clasica.png",
+          "stageImage": "/hamburgueseria/productos-v2/clasica.webp"
         },
         {
           "name": "Bacon Fest",
@@ -203,5 +204,6 @@
     "reviewCount": 210,
     "scrapedAt": "2026-08-03",
     "status": "nuevo"
-  }
+  },
+  "_comentario_menu": "FASE 1 de la vitrina: solo la Clásica tiene `stageImage` (recorte con alfa). Los otros cuatro productos siguen con su foto cuadrada de fondo negro y la vitrina los muestra como fallback, sin fingir transparencia. Al recortar los que faltan, agregar su `stageImage` y listo."
 }
