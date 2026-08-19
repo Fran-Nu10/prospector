@@ -344,7 +344,7 @@ const pedidos: OrderRepository = {
 
       creado = {
         id: nuevoId(),
-        orderNumber: siguienteNumeroDePedido(db.orders.map((o) => o.createdAt)),
+        orderNumber: siguienteNumeroDePedido(db.orders.length),
         publicToken: nuevoId(),
         clientRequestId: draft.clientRequestId,
         status: "pending_confirmation",

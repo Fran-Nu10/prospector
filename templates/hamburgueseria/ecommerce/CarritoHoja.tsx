@@ -127,6 +127,9 @@ export default function CarritoHoja() {
 
   const { carrito } = tienda;
   const vacio = carrito.lineas.length === 0;
+  /* No se puede seguir con líneas rotas adentro: el total que se ve y el que
+     el pedido recalcularía serían distintos. */
+  const sinComprables = carrito.hayProblemas || carrito.subtotalCents <= 0;
 
   return (
     <Hoja
@@ -144,16 +147,29 @@ export default function CarritoHoja() {
                 {formatearDinero(carrito.subtotalCents)}
               </span>
             </div>
-            <button
-              type="button"
-              disabled
-              className="inline-flex min-h-[48px] w-full items-center justify-center rounded-button bg-carbon px-24 text-body font-bold text-rescoldo"
+            {/* El checkout es una PÁGINA, no una tercera hoja apilada: así
+                funcionan atrás/adelante, sobrevive a una recarga y completar
+                un formulario en mobile no pelea con el teclado. */}
+            <a
+              href={`/${tienda.slug}/checkout`}
+              aria-disabled={sinComprables}
+              onClick={(e) => {
+                if (sinComprables) e.preventDefault();
+                else tienda.cerrarCarrito();
+              }}
+              className={`inline-flex min-h-[48px] w-full items-center justify-center rounded-button px-24 text-body font-bold ${
+                sinComprables
+                  ? "pointer-events-none bg-carbon text-rescoldo"
+                  : "bg-brasa text-hueso"
+              }`}
             >
-              Confirmar pedido
-            </button>
-            <p className="text-center text-caption text-rescoldo">
-              Próximo paso: datos de entrega y pago.
-            </p>
+              Continuar
+            </a>
+            {carrito.hayProblemas && (
+              <p className="text-center text-caption text-rescoldo">
+                Quitá lo que ya no está disponible para poder seguir.
+              </p>
+            )}
           </div>
         )
       }

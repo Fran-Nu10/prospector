@@ -14,9 +14,16 @@
 import type { MenuSection as MenuSectionJson } from "../schema";
 import { disponibleAhora } from "./domain";
 import { formatearDinero, parsearPrecioLegado } from "./money";
-import { SLUG_INSTALACION } from "./demo/seed";
+import { DATOS_PROSPECTO, SLUG_INSTALACION } from "./demo/seed";
 import { obtenerEcommerce } from "./service";
-import type { Cents, Product, ProductBadge, ProductOptionGroup } from "./types";
+import type {
+  Cents,
+  DeliveryZone,
+  Product,
+  ProductBadge,
+  ProductOptionGroup,
+  RestaurantOperationalSettings,
+} from "./types";
 
 /** Por qué un producto no se puede comprar. Se traduce a copy en la plantilla. */
 export type MotivoNoComprable =
@@ -70,6 +77,9 @@ export type FuenteCatalogo =
       modo: "ecommerce";
       categorias: { id: string; name: string }[];
       productos: Product[];
+      /** Solo las activas: una zona apagada no se ofrece. */
+      zonas: DeliveryZone[];
+      ajustes: RestaurantOperationalSettings;
       timezone: string;
     }
   | { modo: "carta"; secciones: SeccionVista[] };
@@ -159,15 +169,18 @@ export async function cargarCatalogo(
   if (slugProspecto !== SLUG_INSTALACION) return null;
 
   const { catalog, settings } = obtenerEcommerce();
-  const [categorias, productos, conf] = await Promise.all([
+  const [categorias, productos, conf, zonas] = await Promise.all([
     catalog.listCategories(),
     catalog.listProducts({ includeInactive: true }),
     settings.getSettings(),
+    settings.listDeliveryZones(),
   ]);
   return {
     modo: "ecommerce",
     categorias: categorias.map((c) => ({ id: c.id, name: c.name })),
     productos,
+    zonas,
+    ajustes: conf,
     timezone: conf.timezone,
   };
 }
@@ -208,4 +221,20 @@ export function catalogoDesdeJson(
       }),
     })),
   };
+}
+
+/**
+ * Datos del prospecto de ESTA instalación, tomados del bundle.
+ *
+ * Las rutas del ecommerce no pueden leerlos del filesystem: `data/prospects/`
+ * existe en build pero no dentro de una función serverless (ver el comentario
+ * de `app/[slug]/page.tsx`). Como la instalación es de un solo restaurante, el
+ * JSON viaja en el bundle igual que el seed y la página del pedido puede
+ * renderizarse a demanda sin tocar el disco.
+ */
+export function datosDeLaInstalacion(): {
+  slug: string;
+  data: typeof DATOS_PROSPECTO;
+} {
+  return { slug: SLUG_INSTALACION, data: DATOS_PROSPECTO };
 }

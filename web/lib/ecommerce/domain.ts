@@ -429,20 +429,45 @@ export function calcularPedido(
 }
 
 /**
- * Número de pedido: secuencial dentro del día LOCAL, con tres dígitos. Es lo
- * que el cliente dice por teléfono, así que tiene que ser corto y no repetirse
- * en la misma jornada.
+ * Número de pedido: secuencial de cuatro dígitos, `0001`, `0002`.
+ *
+ * Es el código humano —el que la persona dice por teléfono—, distinto del uuid
+ * interno. Acá lo calcula el proveedor contando lo que ya existe, que alcanza
+ * para un único navegador; cuando entre Postgres la secuencia la genera la base
+ * y deja de haber carrera posible.
  */
-export function siguienteNumeroDePedido(
-  fechasExistentes: readonly string[],
-  ahora: Date = new Date(),
-  zona: string = ZONA_HORARIA
-): string {
-  const hoy = momentoLocal(ahora, zona).isoDate;
-  const delDia = fechasExistentes.filter(
-    (f) => momentoLocal(new Date(f), zona).isoDate === hoy
-  ).length;
-  return String(delDia + 1).padStart(3, "0");
+export function siguienteNumeroDePedido(existentes: number): string {
+  return String(existentes + 1).padStart(4, "0");
+}
+
+/* ---------------------------------------------------------------------------
+ * Resumen de importes
+ *
+ * Subtotal, envío y total en UN solo lugar. Parece trivial —una suma— y por eso
+ * mismo es donde se cuelan las verdades paralelas: el checkout mostrando un
+ * total y el pedido guardando otro.
+ * ------------------------------------------------------------------------ */
+
+export interface ResumenImportes {
+  subtotalCents: Cents;
+  deliveryFeeCents: Cents;
+  totalCents: Cents;
+  /** Cuánto falta para el mínimo de la zona. 0 = alcanza. */
+  faltaParaMinimoCents: Cents;
+}
+
+export function resumenImportes(
+  subtotalCents: Cents,
+  zona: DeliveryZone | null
+): ResumenImportes {
+  const deliveryFeeCents = zona ? zona.feeCents : 0;
+  const falta = zona ? zona.minOrderCents - subtotalCents : 0;
+  return {
+    subtotalCents,
+    deliveryFeeCents,
+    totalCents: subtotalCents + deliveryFeeCents,
+    faltaParaMinimoCents: falta > 0 ? falta : 0,
+  };
 }
 
 /* ---------------------------------------------------------------------------

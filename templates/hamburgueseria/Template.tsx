@@ -100,7 +100,7 @@ export default function Template({
   return (
     /* overflow-x clip y no hidden: `hidden` convertiría al contenedor en el
        scroller y rompería los sticky de la nav y de la firma. */
-    <TiendaProvider fuente={fuente}>
+    <TiendaProvider fuente={fuente} slug={data.slug}>
       <div className="min-h-screen overflow-x-clip bg-noche font-body text-hueso">
         <Nav
           data={data}

@@ -1379,7 +1379,7 @@ por necesidad técnica y sin contradecirlas:
 | # | Pregunta | Impacto | Propuesta por defecto |
 |---|---|---|---|
 | A1 | ¿La instalación de ecommerce mantiene `/[slug]` o colapsa a `/`? | Rutas, SEO, demo comercial | Mantener ambas; `/` sirve la tienda |
-| A2 | ¿Formato del número de pedido? | Comunicación con el cliente | Secuencial diario `#014` reiniciando cada día local |
+| A2 | ~~¿Formato del número de pedido?~~ **CERRADA** | Comunicación con el cliente | Secuencial de cuatro dígitos, `#0001`, sin reinicio diario |
 | A3 | ¿El `employee` puede ver totales y reportes del día? | Permisos §6 | No (solo pedidos) |
 | A4 | ¿Se piden datos de facturación? | Modelo `Order` | No (§2) |
 | A5 | ¿Costo de envío fijo por zona o escalonado por monto? | `DeliveryZone` | Fijo por zona |

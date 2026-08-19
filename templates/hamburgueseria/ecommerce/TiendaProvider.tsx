@@ -23,7 +23,11 @@ import {
   obtenerEcommerce,
   suscribirEcommerce,
 } from "../../../web/lib/ecommerce/service";
-import type { Product } from "../../../web/lib/ecommerce/types";
+import type {
+  DeliveryZone,
+  Product,
+  RestaurantOperationalSettings,
+} from "../../../web/lib/ecommerce/types";
 import {
   seccionesDeCatalogo,
   type FuenteCatalogo,
@@ -54,7 +58,21 @@ import {
 export interface Tienda {
   /** `false` = carta: se muestra, no se vende (prospecto sin ecommerce). */
   interactivo: boolean;
+  /** Slug del prospecto: lo necesitan los enlaces a checkout y a un pedido. */
+  slug: string;
   secciones: SeccionVista[];
+  /** Zonas ACTIVAS. Vacío = no hay delivery configurado. */
+  zonas: DeliveryZone[];
+  ajustes: RestaurantOperationalSettings | null;
+  /**
+   * `true` cuando el catálogo del NAVEGADOR ya se leyó.
+   *
+   * Hasta entonces lo que hay es el seed que renderizó el servidor, que puede
+   * no tener las zonas ni la configuración que el local guardó. Sin este
+   * semáforo, una pantalla que reacciona a "no hay delivery" toma la decisión
+   * con datos que todavía no son los buenos.
+   */
+  cargado: boolean;
   carrito: CarritoResuelto;
   /** Producto abierto en la hoja de detalle. */
   productoAbierto: ProductoVista | null;
@@ -93,9 +111,11 @@ export function useTienda(): Tienda | null {
 
 export default function TiendaProvider({
   fuente,
+  slug,
   children,
 }: {
   fuente: FuenteCatalogo;
+  slug: string;
   children: React.ReactNode;
 }) {
   const interactivo = fuente.modo === "ecommerce";
@@ -108,21 +128,33 @@ export default function TiendaProvider({
   const [productos, setProductos] = useState<Product[]>(
     fuente.modo === "ecommerce" ? fuente.productos : []
   );
+  const [zonas, setZonas] = useState<DeliveryZone[]>(
+    fuente.modo === "ecommerce" ? fuente.zonas : []
+  );
+  const [ajustes, setAjustes] = useState<RestaurantOperationalSettings | null>(
+    fuente.modo === "ecommerce" ? fuente.ajustes : null
+  );
+  const [cargado, setCargado] = useState(fuente.modo !== "ecommerce");
 
   /* Relectura en el cliente + refresco cuando el proveedor avisa. Con el
      proveedor demo eso pasa al escribir; con Supabase lo hará Realtime. */
   useEffect(() => {
     if (!interactivo) return;
     let vivo = true;
-    const { catalog } = obtenerEcommerce();
+    const { catalog, settings } = obtenerEcommerce();
     const cargar = () => {
       Promise.all([
         catalog.listCategories(),
         catalog.listProducts({ includeInactive: true }),
-      ]).then(([cats, prods]) => {
+        settings.listDeliveryZones(),
+        settings.getSettings(),
+      ]).then(([cats, prods, zs, conf]) => {
         if (!vivo) return;
         setCategorias(cats.map((c) => ({ id: c.id, name: c.name })));
         setProductos(prods);
+        setZonas(zs);
+        setAjustes(conf);
+        setCargado(true);
       });
     };
     cargar();
@@ -192,7 +224,11 @@ export default function TiendaProvider({
   const valor = useMemo<Tienda>(
     () => ({
       interactivo,
+      slug,
       secciones,
+      zonas,
+      ajustes,
+      cargado,
       carrito,
       productoAbierto,
       carritoAbierto,
@@ -208,7 +244,11 @@ export default function TiendaProvider({
     }),
     [
       interactivo,
+      slug,
       secciones,
+      zonas,
+      ajustes,
+      cargado,
       carrito,
       productoAbierto,
       carritoAbierto,
