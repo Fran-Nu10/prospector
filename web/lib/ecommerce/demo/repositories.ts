@@ -17,6 +17,7 @@
 import {
   ahoraIso,
   calcularPedido,
+  transicionPermitida,
   normalizarTelefono,
   nuevoId,
   siguienteNumeroDePedido,
@@ -31,6 +32,7 @@ import type {
   EcommerceRepositories,
   ListOrdersOptions,
   ListProductsOptions,
+  MarkPaidInput,
   NewProductInput,
   OrderRepository,
   ProductPatch,
@@ -39,7 +41,7 @@ import type {
 } from "../repositories";
 import {
   EcommerceError,
-  puedeTransicionarPedido,
+  puedeTransicionarPago,
   type Category,
   type DeliveryZone,
   type Order,
@@ -439,9 +441,11 @@ const pedidos: OrderRepository = {
       }
       const actual = db.orders[indice];
 
-      if (!puedeTransicionarPedido(actual.status, to)) {
-        /* El segundo clic sobre el mismo botón cae acá: no hay doble evento ni
-           doble transición. */
+      if (!transicionPermitida(actual, to)) {
+        /* Acá caen tres cosas a la vez: el segundo clic sobre el mismo botón
+           (no hay doble evento ni doble transición), un salto imposible
+           —completar un pedido recién entrado—, y una modalidad equivocada
+           —mandar a reparto algo que se retira en el local—. */
         throw new EcommerceError(
           "INVALID_TRANSITION",
           `No se puede pasar de ${actual.status} a ${to}.`,
@@ -483,6 +487,7 @@ const pedidos: OrderRepository = {
         to,
         reason: input.reason,
         actorId: input.actorId ?? null,
+        actorRole: input.actorRole,
         createdAt: ahora,
       };
 
@@ -512,6 +517,48 @@ const pedidos: OrderRepository = {
         orders,
         products: cae ? reponerStock(db.products, actual.items) : db.products,
       };
+    });
+    return copiar(resultado);
+  },
+
+  async markPaid(id, input: MarkPaidInput = {}) {
+    let resultado!: Order;
+    escribirDb((db) => {
+      const indice = db.orders.findIndex((o) => o.id === id);
+      if (indice < 0) {
+        throw new EcommerceError("NOT_FOUND", "Ese pedido no existe.", { id });
+      }
+      const actual = db.orders[indice];
+
+      /* Idempotente: si ya estaba cobrado se devuelve tal cual, con su fecha
+         original. Un segundo clic no puede reescribir cuándo se cobró. */
+      if (actual.payment.status === "approved") {
+        resultado = actual;
+        return db;
+      }
+      if (!puedeTransicionarPago(actual.payment.status, "approved")) {
+        throw new EcommerceError(
+          "INVALID_TRANSITION",
+          "Ese pago no se puede marcar como cobrado.",
+          { desde: actual.payment.status }
+        );
+      }
+
+      const ahora = ahoraIso();
+      resultado = {
+        ...actual,
+        /* El total NO se toca: cobrar no recalcula nada. */
+        payment: {
+          ...actual.payment,
+          status: "approved",
+          paidAt: ahora,
+          markedByRole: input.actorRole,
+        },
+        updatedAt: ahora,
+      };
+      const orders = [...db.orders];
+      orders[indice] = resultado;
+      return { ...db, orders };
     });
     return copiar(resultado);
   },

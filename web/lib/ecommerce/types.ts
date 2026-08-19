@@ -171,6 +171,15 @@ export interface RestaurantOperationalSettings {
 
 export type FulfillmentType = "pickup" | "delivery";
 
+/**
+ * Rol de quien opera el panel.
+ *
+ * Vive en el dominio y no en la sesión porque queda ESCRITO en el historial del
+ * pedido: saber que "lo aceptó el dueño" o "lo canceló un empleado" es dato del
+ * negocio, no de la pantalla que lo produjo.
+ */
+export type AdminRole = "owner" | "employee";
+
 export type OrderStatus =
   | "pending_confirmation"
   | "confirmed"
@@ -293,6 +302,11 @@ export interface OrderStatusEvent {
   reason?: string;
   /** Quién lo hizo. `null` = el sistema. En modo demo no hay usuarios todavía. */
   actorId: string | null;
+  /**
+   * Rol que ejecutó la acción. En modo demo es lo único que se sabe de quién
+   * fue —no hay usuarios— y NO se inventa un nombre para rellenar la ficha.
+   */
+  actorRole?: AdminRole;
   createdAt: IsoDate;
 }
 
@@ -303,6 +317,8 @@ export interface Payment {
   /** Con cuánto paga el cliente. Informativo: el vuelto se calcula al mostrar. */
   cashReceivedCents?: Cents;
   paidAt?: IsoDate;
+  /** Quién marcó el cobro. Auditoría mínima hasta que exista una tabla real. */
+  markedByRole?: AdminRole;
 }
 
 export interface Order {

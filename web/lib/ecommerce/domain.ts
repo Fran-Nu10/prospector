@@ -18,10 +18,15 @@ import { multiplicarCents, sumarCents } from "./money";
 import {
   EcommerceError,
   LIMITES,
+  TRANSICIONES_PEDIDO,
   ZONA_HORARIA,
+  puedeTransicionarPedido,
   type Cents,
   type DeliveryZone,
+  type FulfillmentType,
+  type IsoDate,
   type LineaCarrito,
+  type OrderStatus,
   type OrderCalculation,
   type OrderDraft,
   type OrderItem,
@@ -628,4 +633,100 @@ export function resolverCarrito(
     hayProblemas: resueltas.some((l) => !l.disponible),
     hayCambiosDePrecio: resueltas.some((l) => l.precioCambio),
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * Acciones disponibles sobre un pedido
+ *
+ * El panel NO decide qué botones mostrar mirando el estado a ojo: pregunta acá.
+ * Así la pantalla no puede ofrecer una transición que el repositorio va a
+ * rechazar, y agregar un estado nuevo no obliga a recorrer el JSX.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Estados a los que ESTE pedido puede pasar ahora mismo.
+ *
+ * Además de la máquina general, filtra por modalidad: un pedido de retiro nunca
+ * "sale para entrega" y uno de delivery nunca queda "listo para retirar".
+ */
+export function accionesDisponibles(pedido: {
+  status: OrderStatus;
+  fulfillmentType: FulfillmentType;
+}): OrderStatus[] {
+  return TRANSICIONES_PEDIDO[pedido.status].filter((destino) => {
+    if (destino === "out_for_delivery") return pedido.fulfillmentType === "delivery";
+    if (destino === "ready_for_pickup") return pedido.fulfillmentType === "pickup";
+    return true;
+  });
+}
+
+/** ¿La transición es legal para este pedido concreto? */
+export function transicionPermitida(
+  pedido: { status: OrderStatus; fulfillmentType: FulfillmentType },
+  destino: OrderStatus
+): boolean {
+  return (
+    puedeTransicionarPedido(pedido.status, destino) &&
+    accionesDisponibles(pedido).includes(destino)
+  );
+}
+
+/** Minutos transcurridos desde que entró el pedido. Para el "hace 12 min". */
+export function minutosDesde(iso: IsoDate, ahora: Date = new Date()): number {
+  const ms = ahora.getTime() - new Date(iso).getTime();
+  return Math.max(0, Math.floor(ms / 60000));
+}
+
+/** Hora local `19:42` de una marca ISO. */
+export function horaLocal(
+  iso: IsoDate,
+  zona: string = ZONA_HORARIA
+): string {
+  return new Intl.DateTimeFormat("es-UY", {
+    timeZone: zona,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso));
+}
+
+/* ---------------------------------------------------------------------------
+ * Agrupación operativa
+ *
+ * El panel no muestra nueve estados: muestra cuatro columnas que responden a
+ * "¿qué tengo que hacer ahora?". El mapeo vive acá, junto a la máquina, y no en
+ * el JSX — si mañana se agrega un estado, se agrega en un solo lugar.
+ * ------------------------------------------------------------------------ */
+
+export type GrupoPanel = "nuevos" | "en_curso" | "listos" | "completados";
+
+export const GRUPOS_PANEL: Record<GrupoPanel, readonly OrderStatus[]> = {
+  nuevos: ["pending_confirmation"],
+  en_curso: ["confirmed", "preparing"],
+  listos: ["ready", "ready_for_pickup", "out_for_delivery"],
+  completados: ["completed", "rejected", "cancelled"],
+};
+
+export function grupoDePedido(estado: OrderStatus): GrupoPanel {
+  for (const [grupo, estados] of Object.entries(GRUPOS_PANEL)) {
+    if (estados.includes(estado)) return grupo as GrupoPanel;
+  }
+  return "completados";
+}
+
+/**
+ * Ordena para trabajar, no para archivar.
+ *
+ * Los pedidos que esperan acción van del MÁS VIEJO al más nuevo: el que lleva
+ * veinte minutos sin confirmar tiene que estar arriba, no enterrado bajo los
+ * que acaban de entrar. Lo terminado se lista al revés, como un historial.
+ */
+export function ordenarParaPanel<T extends { status: OrderStatus; createdAt: IsoDate }>(
+  pedidos: readonly T[],
+  grupo: GrupoPanel
+): T[] {
+  const copia = [...pedidos];
+  return grupo === "completados"
+    ? copia.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    : copia.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }

@@ -15,6 +15,7 @@
  */
 
 import type {
+  AdminRole,
   Category,
   DeliveryZone,
   Order,
@@ -131,6 +132,12 @@ export interface ChangeStatusInput {
   reason?: string;
   estimatedMinutes?: number;
   actorId?: string | null;
+  /** Rol que ejecutó la acción; queda escrito en el historial. */
+  actorRole?: AdminRole;
+}
+
+export interface MarkPaidInput {
+  actorRole?: AdminRole;
 }
 
 export interface OrderRepository {
@@ -151,6 +158,14 @@ export interface OrderRepository {
     input?: ChangeStatusInput
   ): Promise<Order>;
   listStatusEvents(orderId: string): Promise<OrderStatusEvent[]>;
+  /**
+   * Marca el pago como cobrado. Es IDEMPOTENTE: llamarlo dos veces deja el
+   * mismo pago aprobado con la misma fecha, no dos cobros.
+   *
+   * Va en el repositorio y no en el cambio de estado del pedido porque son dos
+   * máquinas distintas: completar un pedido no cobra, y cobrar no completa.
+   */
+  markPaid(id: string, input?: MarkPaidInput): Promise<Order>;
 }
 
 /* ---------------------------------------------------------------------------
