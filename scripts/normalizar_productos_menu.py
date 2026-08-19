@@ -37,6 +37,13 @@ RAIZ = Path(__file__).resolve().parent.parent
 ORIGEN = RAIZ / "assets/hamburgueseria/productos-source"
 DESTINO = RAIZ / "web/public/hamburgueseria/productos-v2"
 
+#: Firmas reales de archivo. El nombre y la extensión no prueban nada: un
+#: "transparente.png" puede ser un JPEG opaco renombrado.
+FIRMAS = {
+    b"\x89PNG\r\n\x1a\n": "PNG",
+    b"\xff\xd8\xff": "JPEG",
+}
+
 #: Lado del lienzo cuadrado de salida.
 LIENZO = 1600
 #: Margen mínimo a cada lado, en fracción del lienzo.
@@ -45,8 +52,12 @@ MARGEN = 0.10
 CALIDAD = 84
 #: Alfa a partir del cual un píxel cuenta como visible (descarta el halo de 1-2).
 UMBRAL_ALFA = 8
-#: Altura óptica: el objeto se apoya un poco por encima del centro geométrico.
-CENTRO_OPTICO_Y = 0.485
+#: Línea de piso: TODOS los productos apoyan la base de su caja visible acá.
+#: Es lo que hace que al pasar de una burger a otra no salten de tamaño ni
+#: floten a distinta altura — están sobre la misma repisa invisible.
+LINEA_BASE = 0.875
+#: Lado máximo de la caja visible. Por encima de esto se reduce (nunca al revés).
+LADO_VISIBLE_MAX = 1280
 
 
 @dataclass
@@ -72,6 +83,17 @@ class Informe:
         print(f"  en el lienzo  {self.dentro[0]}×{self.dentro[1]} px dentro de {LIENZO}×{LIENZO}")
         print(f"  margen real   {self.margen_real * 100:.1f}% (mínimo pedido {MARGEN * 100:.0f}%)")
         print(f"  salida        {self.peso_webp / 1024:.0f} KB WebP calidad {CALIDAD}")
+
+
+def firma_real(ruta: Path) -> str:
+    """Formato REAL, leído de los primeros bytes."""
+    cabecera = ruta.read_bytes()[:16]
+    for magia, nombre in FIRMAS.items():
+        if cabecera.startswith(magia):
+            return nombre
+    if cabecera[:4] == b"RIFF" and cabecera[8:12] == b"WEBP":
+        return "WEBP"
+    return "desconocido"
 
 
 def alfa_real(imagen: Image.Image) -> bool:
@@ -112,7 +134,18 @@ def centro_de_masa(imagen: Image.Image) -> tuple[float, float]:
     return suma_x / total, suma_y / total
 
 
-def normalizar(ruta: Path) -> Informe:
+def normalizar(ruta: Path, destino: Path = DESTINO, salida_nombre: str | None = None) -> Informe:
+    formato = firma_real(ruta)
+    if formato == "JPEG":
+        raise ValueError(
+            f"{ruta.name}: es un JPEG de verdad (lo diga o no el nombre). Un "
+            "JPEG no tiene canal alfa, así que no hay recorte que integrar: el "
+            "producto se queda con su foto de fallback hasta que llegue un PNG "
+            "o WebP con transparencia real."
+        )
+    if formato == "desconocido":
+        raise ValueError(f"{ruta.name}: formato no reconocido por su firma.")
+
     imagen = Image.open(ruta)
     original = imagen.size
     peso_png = ruta.stat().st_size
@@ -121,8 +154,9 @@ def normalizar(ruta: Path) -> Informe:
         imagen = imagen.convert("RGBA")
     if not alfa_real(imagen):
         raise ValueError(
-            f"{ruta.name}: el alfa es opaco de punta a punta. Este pipeline no "
-            "recorta fondos: el recorte tiene que venir hecho."
+            f"{ruta.name}: {formato} sin transparencia real — el alfa está "
+            "opaco de punta a punta. Este pipeline no recorta fondos: el "
+            "recorte tiene que venir hecho."
         )
 
     ancho, alto = imagen.size
@@ -135,32 +169,35 @@ def normalizar(ruta: Path) -> Informe:
     recorte = imagen.crop(caja)
     rw, rh = recorte.size
 
-    util = int(LIENZO * (1 - 2 * MARGEN))
+    util = min(LADO_VISIBLE_MAX, int(LIENZO * (1 - 2 * MARGEN)))
     escala = min(util / rw, util / rh, 1.0)  # el 1.0 es el techo: nunca agranda
     if escala < 1.0:
         recorte = recorte.resize((round(rw * escala), round(rh * escala)), Image.LANCZOS)
 
     cw, ch = recorte.size
-    cx, cy = centro_de_masa(recorte)
+    cx, _ = centro_de_masa(recorte)
 
-    # Centrado óptico: el centro de masa cae en el centro del lienzo (un pelo
-    # arriba en el eje Y), y después se acomoda para que nada quede fuera.
+    # Horizontal: centro de MASA, no de caja — una burger con el pan corrido a
+    # un lado se ve torcida si se centra por rectángulo.
+    # Vertical: la BASE de todos los productos cae en la misma línea. Cada
+    # burger tiene su altura real (la Oklahoma es chata, la Doble Doble es una
+    # torre) y eso se conserva; lo que se comparte es el piso.
     izquierda = round(LIENZO / 2 - cx)
-    arriba = round(LIENZO * CENTRO_OPTICO_Y - cy)
+    arriba = round(LIENZO * LINEA_BASE - ch)
     izquierda = max(0, min(LIENZO - cw, izquierda))
     arriba = max(0, min(LIENZO - ch, arriba))
 
     lienzo = Image.new("RGBA", (LIENZO, LIENZO), (0, 0, 0, 0))
     lienzo.paste(recorte, (izquierda, arriba))
 
-    DESTINO.mkdir(parents=True, exist_ok=True)
-    salida = DESTINO / f"{ruta.stem}.webp"
+    destino.mkdir(parents=True, exist_ok=True)
+    salida = destino / f"{salida_nombre or ruta.stem}.webp"
     lienzo.save(salida, "WEBP", quality=CALIDAD, method=6, lossless=False)
 
     margen_real = min(izquierda, arriba, LIENZO - cw - izquierda, LIENZO - ch - arriba) / LIENZO
 
     return Informe(
-        nombre=ruta.name,
+        nombre=f"{ruta.name} ({formato}) → {salida.name}",
         original=original,
         peso_png=peso_png,
         esquinas=esquinas,

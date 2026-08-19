@@ -23,15 +23,7 @@ import type {
   MenuSection as MenuSectionData,
 } from "../../web/lib/schema";
 import { hrefPedirProducto } from "./menu";
-import {
-  DURACION_EXPANSION,
-  DURACION_FILA,
-  EASE_BLOQUE,
-  OCULTO_FILA,
-  VIEWPORT,
-  VISIBLE_FILA,
-  delayFila,
-} from "./animacion";
+import { DURACION_EXPANSION, EASE_BLOQUE } from "./animacion";
 import { numeral, tamanoNombreProducto } from "./tipografia";
 
 /*
@@ -100,6 +92,71 @@ export const CAMBIO = {
   opacity: [0, 1, 0],
 } as const;
 
+/**
+ * Las dos variantes del mismo escenario.
+ *
+ * `primary` es la experiencia: hamburguesas, tipo enorme, producto grande y el
+ * movimiento que hereda del hero. `compact` es la misma máquina con menos
+ * volumen —acompañamientos no puede leerse como un segundo hero— y sin
+ * ingredientes, que ahí no aportan.
+ *
+ * Las clases van literales y completas: Tailwind escanea el código fuente, así
+ * que una clase armada por concatenación no existiría en el CSS final.
+ */
+export const VARIANTE = {
+  primary: {
+    /* Alto del escenario. Es la MEDIDA MADRE: el tamaño del producto, el del
+       nombre y el piso del nombre se calculan como fracción de este alto, así
+       la composición es la misma en cualquier pantalla. Va como variable CSS
+       porque el tamaño del nombre tiene que poder leerla. */
+    altoM: "clamp(300px,42svh,360px)",
+    altoD: "clamp(400px,52svh,540px)",
+    escenario: "h-[var(--esc-m)] lg:h-[var(--esc-d)]",
+    /* El producto se mide por ALTO, no por ancho: la caja es cuadrada, y
+       atarla al alto del escenario deja fija la relación entre la burger y el
+       nombre en cualquier viewport. Medido por ancho, la relación se movía en
+       cada breakpoint y el solapamiento se perdía. */
+    media: "h-[92%] max-h-[86vw] lg:h-[112%] lg:max-h-[46vw]",
+    /* El producto vive sobre el MISMO eje izquierdo que el nombre, la bajada
+       y el precio; en desktop se corre un 10% para no arrancar pegado al
+       borde. Suena contraintuitivo hasta que se miden los nombres: el nombre
+       empieza siempre a la izquierda y el más corto del menú ("Verde") termina
+       al 34% del ancho — con el producto a la derecha no se tocaban nunca. */
+    alineacionMedia: "justify-start lg:pl-[10%]",
+    /* Foto cuadrada de fallback: NO puede pasar por delante del nombre —es
+       opaca y lo borraría—, así que se achica y se apoya al pie, debajo. */
+    mediaFallback: "h-[56%] lg:h-[64%]",
+    /* Piso del nombre, medido desde el piso del escenario. El nombre crece
+       hacia ARRIBA desde acá: un nombre de dos líneas no empuja su base, así
+       que la burger le tapa siempre la misma franja. */
+    baseNombre: { m: "52.5%", d: "55%" },
+    nombreMobile: { piso: 64, alto: "var(--esc-m)", factor: 0.242, techo: 104 },
+    nombreDesktop: { piso: 96, alto: "var(--esc-d)", factor: 0.369, techo: 190 },
+    cambio: CAMBIO,
+    conIngredientes: true,
+  },
+  compact: {
+    altoM: "clamp(230px,32svh,280px)",
+    altoD: "clamp(310px,44svh,455px)",
+    escenario: "h-[var(--esc-m)] lg:h-[var(--esc-d)]",
+    media: "h-[103%] max-h-[72vw] lg:h-[124%] lg:max-h-[36vw]",
+    alineacionMedia: "justify-start lg:pl-[10%]",
+    mediaFallback: "h-[58%] lg:h-[66%]",
+    baseNombre: { m: "63%", d: "70%" },
+    nombreMobile: { piso: 40, alto: "var(--esc-m)", factor: 0.188, techo: 68 },
+    nombreDesktop: { piso: 56, alto: "var(--esc-d)", factor: 0.28, techo: 120 },
+    cambio: {
+      y: [30, 0, -24],
+      rotateY: [4, 0, -4],
+      scale: [0.94, 1, 0.97],
+      opacity: [0, 1, 0],
+    },
+    conIngredientes: false,
+  },
+} as const;
+
+export type Variante = keyof typeof VARIANTE;
+
 /** Rango neutro: el motion value queda declarado pero no se mueve. */
 const QUIETO: [number, number] = [0, 1];
 
@@ -122,31 +179,17 @@ type Producto = MenuItem;
 function ProductoMedia({
   item,
   activo,
-  encogido,
-  animado,
 }: {
   item: Producto;
   /** Solo el visible pide prioridad de carga; el resto va perezoso. */
   activo: boolean;
-  /** Con los ingredientes abiertos la burger cede lugar al panel. */
-  encogido: boolean;
-  animado: boolean;
 }) {
   const src = item.stageImage ?? item.image;
   if (!src) return null;
   const flotante = Boolean(item.stageImage);
 
   return (
-    <motion.div
-      className="relative h-full w-full"
-      initial={false}
-      animate={{ scale: encogido ? 0.82 : 1, y: encogido ? -12 : 0 }}
-      transition={
-        animado
-          ? { duration: DURACION_EXPANSION, ease: EASE_BLOQUE }
-          : { duration: 0 }
-      }
-    >
+    <div className="relative h-full w-full">
       <Image
         src={src}
         alt={item.name}
@@ -158,7 +201,7 @@ function ProductoMedia({
         loading={activo && flotante ? undefined : "lazy"}
         className="object-contain"
       />
-    </motion.div>
+    </div>
   );
 }
 
@@ -167,7 +210,15 @@ function ProductoMedia({
  *
  * Una foto armada no tiene capas: no se puede abrir de verdad. Así que el
  * panel no finge un despiece —nada de líneas apuntando a un pan que no está
- * recortado—, es una lista editorial que se apoya al costado del producto.
+ * recortado—, es una lista editorial de tipografía mono.
+ *
+ * DÓNDE SE APOYA, y por qué son dos sitios distintos:
+ *   · en desktop la burger vive en la mitad izquierda del escenario, así que
+ *     el panel ocupa la franja derecha —el margen negativo lo sube justo sobre
+ *     el escenario, sin sacarlo del flujo dos veces—; ahí no tapa nada;
+ *   · en mobile la burger ocupa el ancho entero: no hay costado libre. El
+ *     panel baja al flujo, debajo del escenario, y empuja la bajada. Antes se
+ *     superponía a la burger y no se leía ni la lista ni el producto.
  * ------------------------------------------------------------------------ */
 
 function IngredientesPanel({
@@ -183,7 +234,7 @@ function IngredientesPanel({
     <motion.ul
       id={id}
       role="list"
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] flex flex-col gap-8 lg:inset-y-0 lg:right-auto lg:w-[38%] lg:justify-center"
+      className="pointer-events-none z-[3] mt-16 flex flex-col gap-8 lg:-mt-[var(--esc-d)] lg:h-[var(--esc-d)] lg:w-[38%] lg:self-end lg:justify-center"
       initial={animado ? { opacity: 0, y: 12 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={animado ? { opacity: 0, y: 12 } : undefined}
@@ -232,6 +283,7 @@ function ProductoSlide({
   animado,
   progresoPista,
   entrada,
+  variante,
 }: {
   item: Producto;
   indice: number;
@@ -245,11 +297,19 @@ function ProductoSlide({
   progresoPista: MotionValue<number>;
   /** Progreso de la entrada desde el hero; solo lo usa el primer slide. */
   entrada?: MotionValue<number>;
+  variante: Variante;
 }) {
+  const cfg = VARIANTE[variante];
   const idPanel = useId();
   const href = hrefPedirProducto(whatsapp, item.name);
-  const ingredientes = item.ingredients ?? [];
+  /* Los ingredientes son de la variante principal: en acompañamientos, una
+   * descripción de una línea no se despliega en nada. */
+  const ingredientes = cfg.conIngredientes ? (item.ingredients ?? []) : [];
   const etiqueta = item.tag ? TAG_LABELS[item.tag] : null;
+  const tieneMedia = Boolean(item.stageImage ?? item.image);
+  /* Solo el recorte con alfa puede pasar POR DELANTE del nombre. La foto
+   * cuadrada de fallback es opaca: si se cruzara, borraría la palabra. */
+  const flotante = Boolean(item.stageImage);
 
   /* --- Profundidad derivada de la posición horizontal ---
    * El centro de este slide cae en `indice / (total - 1)` del recorrido de la
@@ -277,21 +337,21 @@ function ProductoSlide({
     return [...valores];
   };
 
-  const yCambio = useTransform(progresoPista, ventana, tri(CAMBIO.y, [0, 0]));
+  const yCambio = useTransform(progresoPista, ventana, tri(cfg.cambio.y, [0, 0]));
   const rotateY = useTransform(
     progresoPista,
     ventana,
-    tri(CAMBIO.rotateY, [0, 0])
+    tri(cfg.cambio.rotateY, [0, 0])
   );
   const escalaCambio = useTransform(
     progresoPista,
     ventana,
-    tri(CAMBIO.scale, [1, 1])
+    tri(cfg.cambio.scale, [1, 1])
   );
   const opacidadCambio = useTransform(
     progresoPista,
     ventana,
-    tri(CAMBIO.opacity, [1, 1])
+    tri(cfg.cambio.opacity, [1, 1])
   );
 
   /* --- Entrada desde el hero (solo el primero) --- */
@@ -341,74 +401,113 @@ function ProductoSlide({
       <motion.div
         className="relative flex flex-col"
         style={{
+          /* La MEDIDA MADRE del slide: el escenario, el producto, el nombre y
+             el panel de ingredientes se calculan todos a partir de ella. */
+          ["--esc-m" as string]: cfg.altoM,
+          ["--esc-d" as string]: cfg.altoD,
           y: yCambio,
           rotateY,
           scale: escalaCambio,
           opacity: opacidadCambio,
         }}
       >
-        {/* --- Cabecera del producto: nombre accesible + tag --- */}
-        <div className="relative z-[3] flex flex-col gap-4">
-          <motion.h4
-            className="font-display uppercase leading-heading tracking-display text-hueso text-[clamp(28px,6vw,44px)]"
-            style={{ opacity: opacidadNombre }}
-          >
-            {item.name}
-          </motion.h4>
-          {etiqueta && (
-            <motion.span
-              className="font-mono text-caption uppercase tracking-[0.22em] text-queso"
-              style={{ opacity: opacidadTag }}
-            >
-              {etiqueta}
-            </motion.span>
-          )}
-        </div>
-
-        {/* --- Vitrina: nombre gigante (z-0), hairline (z-1), burger (z-2) --- */}
-        <div className="relative mt-16 h-[clamp(200px,38svh,360px)] lg:mt-24 lg:h-[clamp(260px,46svh,480px)]">
+        {/* El tag mantiene jerarquía secundaria: arriba, chico, en ámbar. */}
+        {etiqueta && (
           <motion.span
-            aria-hidden
-            className="absolute inset-x-0 top-[46%] z-0 -translate-y-1/2 whitespace-nowrap text-center font-display uppercase leading-heading tracking-display text-hueso/[0.22]"
+            className="relative z-[3] font-mono text-caption uppercase tracking-[0.22em] text-queso"
+            style={{ opacity: opacidadTag }}
+          >
+            {etiqueta}
+          </motion.span>
+        )}
+
+        {/* --- ESCENARIO: nombre (z-0) · hairline (z-1) · producto (z-2) ---
+            El nombre es el heading REAL del producto, no un adorno: hay una
+            sola versión visible y vive acá. Se apoya en un piso propio dentro
+            del escenario y la burger sube desde la hairline hasta cruzarle el
+            pie: la superposición da profundidad sin comerse la palabra.
+
+            Sin ninguna imagen no hay escenario que armar: el nombre pasa a ser
+            un bloque normal y el alto fijo desaparece, porque un hueco de
+            350px vacío no es composición, es un error. */}
+        <div className={`relative mt-8 ${tieneMedia ? cfg.escenario : ""}`}>
+          <motion.h4
+            className={`z-0 font-display uppercase leading-heading tracking-display text-hueso text-[length:var(--nombre-m)] lg:text-[length:var(--nombre-d)] ${
+              flotante
+                ? "absolute inset-x-0 bottom-[var(--base-m)] lg:bottom-[var(--base-d)]"
+                : tieneMedia
+                  ? "absolute inset-x-0 top-0"
+                  : "relative pb-16"
+            }`}
             style={{
-              fontSize: tamanoNombreProducto(item.name),
+              /* Dos tamaños en variables CSS: el `clamp` depende de cuántos
+                 caracteres tiene el nombre, así que no puede salir de una
+                 clase estática, y el cambio por breakpoint tampoco puede salir
+                 de un estilo inline. Las variables resuelven las dos cosas. */
+              ["--nombre-m" as string]: tamanoNombreProducto(
+                item.name,
+                cfg.nombreMobile
+              ),
+              ["--nombre-d" as string]: tamanoNombreProducto(
+                item.name,
+                cfg.nombreDesktop
+              ),
+              ["--base-m" as string]: cfg.baseNombre.m,
+              ["--base-d" as string]: cfg.baseNombre.d,
               opacity: opacidadNombre,
               y: yNombre,
             }}
           >
             {item.name}
-          </motion.span>
+          </motion.h4>
 
           {/* Hairline de apoyo: le da piso óptico al objeto sin dibujar una
               sombra ni un plano falso. */}
           <motion.span
             aria-hidden
-            className="absolute inset-x-0 top-[78%] z-[1] h-px bg-negro"
+            className="absolute inset-x-0 bottom-0 z-[1] h-px bg-negro"
             style={{ opacity: opacidadNombre }}
           />
 
-          <div className="absolute inset-0 z-[2] flex items-center justify-center">
-            <div className="relative h-full w-[min(88vw,430px)] lg:w-[min(52vw,720px)]">
-              <ProductoMedia
-                item={item}
-                activo={activo}
-                encogido={abierto}
-                animado={animado}
-              />
-            </div>
-          </div>
+          {tieneMedia && (
+            /* El lienzo de 1600×1600 apoya la base visible del producto en el
+               87.5% de su alto (ver el script de normalización). Bajando la
+               caja un 12.5% de SU PROPIO alto —no del escenario—, la base real
+               del producto cae exactamente sobre la hairline sea cual sea el
+               tamaño, y todas las burgers apoyan en la misma línea sin importar
+               si son chatas o torres. Lo que sobra arriba es transparente:
+               puede pasar por delante del nombre sin taparlo.
 
-          <AnimatePresence initial={false}>
-            {abierto && ingredientes.length > 0 && (
-              <IngredientesPanel
-                key="ingredientes"
-                id={idPanel}
-                ingredientes={ingredientes}
-                animado={animado}
-              />
-            )}
-          </AnimatePresence>
+               La foto cuadrada de fallback no puede hacer eso —es opaca—, así
+               que va más chica, apoyada al pie y sin cruzarse con el nombre. */
+            <div
+              className={`pointer-events-none absolute inset-0 z-[2] flex items-end ${
+                flotante ? cfg.alineacionMedia : "justify-start"
+              }`}
+            >
+              <div
+                className={`relative aspect-square ${
+                  flotante
+                    ? `translate-y-[12.5%] ${cfg.media}`
+                    : cfg.mediaFallback
+                }`}
+              >
+                <ProductoMedia item={item} activo={activo} />
+              </div>
+            </div>
+          )}
         </div>
+
+        <AnimatePresence initial={false}>
+          {abierto && ingredientes.length > 0 && (
+            <IngredientesPanel
+              key="ingredientes"
+              id={idPanel}
+              ingredientes={ingredientes}
+              animado={animado}
+            />
+          )}
+        </AnimatePresence>
 
         {/* --- Información: descripción, precio y acción --- */}
         <div className="relative z-[3] mt-16 flex flex-col gap-16 lg:mt-24">
@@ -556,22 +655,31 @@ function SelectorProductos({
 }
 
 /* ---------------------------------------------------------------------------
- * Vitrina — la categoría con fotografías
+ * Vitrina — el mismo motor para las dos categorías.
+ *
+ * `primary` (hamburguesas) y `compact` (acompañamientos) comparten TODO: la
+ * pista con scroll nativo, el índice leído de la posición, las flechas, el
+ * contador, el selector y la coreografía. Lo único que cambia es el volumen:
+ * alto del escenario, tamaño del producto, escala del nombre, intensidad del
+ * movimiento y si hay ingredientes. Una sola implementación, dos calibraciones.
  * ------------------------------------------------------------------------ */
 
 function Vitrina({
   section,
-  numero,
   whatsapp,
   animado,
   entrada,
+  variante,
 }: {
   section: MenuSectionData;
-  numero: number;
   whatsapp?: string;
   animado: boolean;
-  entrada: MotionValue<number>;
+  /** Solo la vitrina principal hereda la entrada del hero. */
+  entrada?: MotionValue<number>;
+  variante: Variante;
 }) {
+  const cfg = VARIANTE[variante];
+  const principal = variante === "primary";
   const productos = section.items;
   const total = productos.length;
   const pistaRef = useRef<HTMLUListElement>(null);
@@ -669,15 +777,20 @@ function Vitrina({
     [animado, paso, total]
   );
 
+  /* Los controles de la vitrina principal entran con el handoff del hero; los
+   * de la compacta ya están en su sitio (la sección no vuelve a presentarse). */
+  const quietoControles = useMotionValue(1);
+  const relojControles = entrada ?? quietoControles;
+  const conEntradaControles = Boolean(entrada) && animado;
   const opacidadControles = useTransform(
-    entrada,
-    animado ? [...HANDOFF.controles] : [...QUIETO],
-    animado ? [0, 1] : [1, 1]
+    relojControles,
+    conEntradaControles ? [...HANDOFF.controles] : [...QUIETO],
+    conEntradaControles ? [0, 1] : [1, 1]
   );
   const yControles = useTransform(
-    entrada,
-    animado ? [...HANDOFF.controles] : [...QUIETO],
-    animado ? [14, 0] : [0, 0]
+    relojControles,
+    conEntradaControles ? [...HANDOFF.controles] : [...QUIETO],
+    conEntradaControles ? [14, 0] : [0, 0]
   );
 
   return (
@@ -692,7 +805,13 @@ function Vitrina({
       }}
     >
       <div className="flex items-baseline justify-between gap-24">
-        <h3 className="font-display uppercase leading-heading tracking-display text-brasa text-[clamp(24px,5vw,44px)]">
+        <h3
+          className={`font-display uppercase leading-heading tracking-display text-brasa ${
+            principal
+              ? "text-[clamp(24px,5vw,44px)]"
+              : "text-[clamp(20px,3.5vw,32px)]"
+          }`}
+        >
           {section.title}
         </h3>
         <span
@@ -730,6 +849,7 @@ function Vitrina({
               animado={animado}
               progresoPista={scrollXProgress}
               entrada={i === 0 ? entrada : undefined}
+              variante={variante}
             />
           ))}
         </ul>
@@ -757,90 +877,6 @@ function Vitrina({
 
         <SelectorProductos items={productos} indice={indice} onIr={irA} />
       </motion.div>
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------------------
- * Lista compacta — categorías sin fotografía
- * ------------------------------------------------------------------------ */
-
-function ListaCompacta({
-  section,
-  whatsapp,
-  animado,
-}: {
-  section: MenuSectionData;
-  whatsapp?: string;
-  animado: boolean;
-}) {
-  return (
-    <div className="mt-80 md:mt-100">
-      <h3 className="font-display uppercase leading-heading tracking-display text-brasa text-[clamp(24px,5vw,44px)]">
-        {section.title}
-      </h3>
-      <ul
-        role="list"
-        className="mt-32 border-b border-negro lg:grid lg:grid-cols-2 lg:gap-x-40"
-      >
-        {section.items.map((item, i) => {
-          const href = hrefPedirProducto(whatsapp, item.name);
-          return (
-            <motion.li
-              key={item.name}
-              data-revelar=""
-              initial={OCULTO_FILA}
-              whileInView={VISIBLE_FILA}
-              viewport={VIEWPORT}
-              transition={
-                animado
-                  ? {
-                      duration: DURACION_FILA,
-                      ease: EASE_BLOQUE,
-                      delay: delayFila(i),
-                    }
-                  : { duration: 0 }
-              }
-              className="border-t border-negro"
-            >
-              <div className="flex flex-col gap-8 py-12 lg:py-20">
-                <div className="flex items-start gap-16">
-                  <div className="flex min-w-0 flex-1 flex-col items-start gap-4">
-                    <span className="font-mono text-body-sm text-rescoldo">
-                      {numeral(i + 1)}
-                    </span>
-                    <span className="break-words font-display uppercase leading-heading tracking-display text-hueso text-[clamp(28px,7vw,32px)] lg:text-[clamp(36px,3vw,44px)]">
-                      {item.name}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-8">
-                    {item.price && (
-                      <span className="font-mono text-body-sm font-bold text-hueso lg:text-body">
-                        {item.price}
-                      </span>
-                    )}
-                    {href && (
-                      <a
-                        href={href}
-                        aria-label={`Pedir ${item.name} por WhatsApp`}
-                        className="inline-flex min-h-[44px] items-center rounded-button bg-brasa px-16 text-body-sm font-bold text-hueso lg:min-h-0 lg:bg-transparent lg:px-0 lg:text-rescoldo lg:underline lg:underline-offset-4 lg:hover:text-hueso"
-                      >
-                        <span className="lg:hidden">Pedir</span>
-                        <span className="hidden lg:inline">Pedir esta</span>
-                      </a>
-                    )}
-                  </div>
-                </div>
-                {item.description && (
-                  <p className="max-w-[52ch] text-body-sm leading-body text-rescoldo">
-                    {item.description}
-                  </p>
-                )}
-              </div>
-            </motion.li>
-          );
-        })}
-      </ul>
     </div>
   );
 }
@@ -901,20 +937,25 @@ export default function MenuSeccion({
           {vitrina && (
             <Vitrina
               section={vitrina}
-              numero={numero}
               whatsapp={whatsapp}
               animado={animado}
               entrada={scrollYProgress}
+              variante="primary"
             />
           )}
 
+          {/* Las demás categorías usan el MISMO escenario en versión compacta:
+              acompañamientos no puede leerse como un segundo hero, pero
+              tampoco merece volver a ser una lista de texto plano. */}
           {resto.map((section) => (
-            <ListaCompacta
-              key={section.title}
-              section={section}
-              whatsapp={whatsapp}
-              animado={animado}
-            />
+            <div key={section.title} className="mt-64 md:mt-80">
+              <Vitrina
+                section={section}
+                whatsapp={whatsapp}
+                animado={animado}
+                variante="compact"
+              />
+            </div>
           ))}
         </div>
       </div>
