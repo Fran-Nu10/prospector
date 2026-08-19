@@ -84,15 +84,34 @@ export function dividirNombre(nombre: string): string[] {
 /**
  * Tamaño del nombre del producto que va DETRÁS de la burger en la vitrina.
  *
- * Mismo criterio que el sangrado del hero —el ancho de la mancha depende de
- * cuántos caracteres tiene el nombre— pero acotado por arriba y por abajo: el
- * plano tiene que seguir siendo un plano, ni desaparecer con "Doble Doble" ni
- * comerse la sección con "Verde".
+ * Acá el tamaño NO sale del ancho del viewport: sale del ALTO del escenario
+ * (`alto`, la misma variable CSS que dimensiona la burger). Es la única forma
+ * de que la relación entre la palabra y el producto —de la que depende cuánta
+ * tinta queda tapada— no se descalibre entre breakpoints. Medido en `vw`, en
+ * 1024×768 la burger tapaba el 49% del nombre y en 768×1024 el 7%: el mismo
+ * diseño daba dos composiciones distintas.
+ *
+ * El ancho sigue mandando en un solo punto: el término `92vw / divisor` es el
+ * test de "¿entra en una línea?", y con él un nombre largo baja de tamaño en
+ * vez de partirse. `piso` y `techo` acotan el plano por si el dato es extremo.
  */
-export function tamanoNombreProducto(nombre: string): string {
+export function tamanoNombreProducto(
+  nombre: string,
+  {
+    piso,
+    alto,
+    factor,
+    techo,
+  }: { piso: number; alto: string; factor: number; techo: number }
+): string {
+  /* El divisor mide el nombre ENTERO: es el test de "¿entra en una línea?".
+   * Si entra, el nombre se compone en una sola línea al tamaño que pida el
+   * viewport; si no entra ni al piso, parte en dos —el piso manda— y el bloque
+   * queda lo más bajo posible. Medir solo la palabra más larga dejaba pasar
+   * nombres de dos palabras a un tamaño que garantizaba el corte. */
   const caracteres = Math.max(nombre.trim().length, 1);
   const divisor = (caracteres * AVANCE_ANTON).toFixed(2);
-  return `clamp(72px, min(12vw, calc(96vw / ${divisor})), 190px)`;
+  return `clamp(${piso}px, min(calc(${alto} * ${factor}), calc(92vw / ${divisor})), ${techo}px)`;
 }
 
 /** Numeral de sección del póster: 1 → "01". */

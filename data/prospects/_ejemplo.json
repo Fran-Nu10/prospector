@@ -86,7 +86,8 @@
           ],
           "price": "$520",
           "tag": "nuevo",
-          "image": "/hamburgueseria/platos/oklahoma.png"
+          "image": "/hamburgueseria/platos/oklahoma.png",
+          "stageImage": "/hamburgueseria/productos-v2/oklahoma.webp"
         },
         {
           "name": "Verde",
@@ -98,7 +99,8 @@
           ],
           "price": "$480",
           "tag": "vegano",
-          "image": "/hamburgueseria/platos/verde.png"
+          "image": "/hamburgueseria/platos/verde.png",
+          "stageImage": "/hamburgueseria/productos-v2/verde.webp"
         },
         {
           "name": "Doble Doble",
@@ -108,7 +110,8 @@
             "Doble cheddar"
           ],
           "price": "$690",
-          "image": "/hamburgueseria/platos/doble-doble.png"
+          "image": "/hamburgueseria/platos/doble-doble.png",
+          "stageImage": "/hamburgueseria/productos-v2/doble-doble.webp"
         }
       ]
     },
@@ -205,5 +208,5 @@
     "scrapedAt": "2026-08-03",
     "status": "nuevo"
   },
-  "_comentario_menu": "FASE 1 de la vitrina: solo la Clásica tiene `stageImage` (recorte con alfa). Los otros cuatro productos siguen con su foto cuadrada de fondo negro y la vitrina los muestra como fallback, sin fingir transparencia. Al recortar los que faltan, agregar su `stageImage` y listo."
+  "_comentario_menu": "Vitrina: `stageImage` es el recorte con alfa (1600x1600 WebP, generado por scripts/normalizar_productos_menu.py desde assets/hamburgueseria/productos-source/). Cuatro de las cinco hamburguesas ya lo tienen; BACON FEST no, porque no llegó su PNG transparente: muestra su foto cuadrada al pie, más chica y SIN cruzarse con el nombre —una foto opaca por delante lo borraría—, y se nota que le falta el recorte, que es lo correcto. Los acompañamientos todavía no tienen ninguna imagen: la vitrina compacta se compone sin escenario (nombre, bajada y precio) hasta que existan los recortes; cuando lleguen van a web/public/hamburgueseria/acompanamientos-v2/<slug>.webp y se declaran acá como `stageImage`."
 }
