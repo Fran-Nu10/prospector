@@ -50,7 +50,12 @@ import {
   type Product,
   type RestaurantOperationalSettings,
 } from "../types";
-import { escribirDb, leerDb, type DemoDatabase } from "./database";
+import {
+  escribirDb,
+  leerDb,
+  suscribirDemo,
+  type DemoDatabase,
+} from "./database";
 
 /** Copia profunda para no entregar referencias vivas de la base. */
 function copiar<T>(valor: T): T {
@@ -522,5 +527,10 @@ const pedidos: OrderRepository = {
 
 /** El proveedor completo. */
 export function crearRepositoriosDemo(): EcommerceRepositories {
-  return { catalog: catalogo, settings: configuracion, orders: pedidos };
+  return {
+    catalog: catalogo,
+    settings: configuracion,
+    orders: pedidos,
+    suscribir: suscribirDemo,
+  };
 }

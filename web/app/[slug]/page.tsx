@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getAllProspects, getProspectBySlug } from "@/lib/prospects";
 import type { ClientData } from "@/lib/schema";
 import { SITE_URL, urlAbsoluta } from "@/lib/site";
+import { cargarCatalogo, catalogoDesdeJson } from "@/lib/ecommerce/vistas";
 import HamburgueseriaTemplate from "@templates/hamburgueseria/Template";
 
 /*
@@ -166,7 +167,13 @@ export default async function ProspectPage({
   if (!data) notFound();
 
   if (data.vertical === "hamburgueseria") {
-    return <HamburgueseriaTemplate data={data} />;
+    /* El catálogo se resuelve en el SERVIDOR: el HTML sale con los productos
+       adentro y el menú no parpadea al hidratar. Si este prospecto no es la
+       instalación de ecommerce, la plantilla se arma desde el JSON y queda en
+       modo carta — se ve igual, no se vende. */
+    const fuente =
+      (await cargarCatalogo(data.slug)) ?? catalogoDesdeJson(data.menu);
+    return <HamburgueseriaTemplate data={data} fuente={fuente} />;
   }
 
   return (

@@ -21,6 +21,7 @@ import {
   ZONA_HORARIA,
   type Cents,
   type DeliveryZone,
+  type LineaCarrito,
   type OrderCalculation,
   type OrderDraft,
   type OrderItem,
@@ -213,6 +214,19 @@ function grupoDeOpcion(
 }
 
 /**
+ * Precio unitario REAL: base del producto más las diferencias de las opciones
+ * elegidas. Es la única fórmula de precio unitario del sistema — la usan el
+ * cálculo del pedido y la resolución del carrito, para que no puedan dar
+ * distinto.
+ */
+export function precioUnitario(
+  producto: { priceCents: Cents },
+  opciones: readonly { priceDeltaCents: Cents }[]
+): Cents {
+  return producto.priceCents + sumarCents(opciones.map((o) => o.priceDeltaCents));
+}
+
+/**
  * Resuelve una línea contra el catálogo: precio unitario, opciones y snapshot.
  * Cualquier inconsistencia corta acá — no se "arregla" silenciosamente una
  * opción que no existe ni se ignora un producto agotado.
@@ -281,8 +295,7 @@ function calcularLinea(
     );
   }
 
-  const unitPriceCents: Cents =
-    producto.priceCents + sumarCents(opciones.map((o) => o.priceDeltaCents));
+  const unitPriceCents: Cents = precioUnitario(producto, opciones);
 
   return {
     productId: producto.id,
@@ -430,4 +443,164 @@ export function siguienteNumeroDePedido(
     (f) => momentoLocal(new Date(f), zona).isoDate === hoy
   ).length;
   return String(delDia + 1).padStart(3, "0");
+}
+
+/* ---------------------------------------------------------------------------
+ * Resolución del carrito
+ *
+ * El carrito del navegador guarda QUÉ pidió la persona (producto, cantidad,
+ * opciones) y un snapshot de presentación. El precio bueno sale SIEMPRE de acá:
+ * se vuelve a leer el catálogo y se recalcula.
+ *
+ * A diferencia de `calcularPedido`, esta función NO tira: un carrito con un
+ * producto agotado tiene que poder mostrarse para que la persona lo saque. El
+ * que corta es el checkout, no la vitrina.
+ * ------------------------------------------------------------------------ */
+
+export type MotivoLinea =
+  | "NOT_FOUND"
+  | "INACTIVE"
+  | "SOLD_OUT"
+  | "OUT_OF_STOCK"
+  | "OUT_OF_HOURS"
+  | "INVALID_PRICE"
+  | "OPTIONS_CHANGED";
+
+export interface LineaResuelta {
+  lineId: string;
+  productId: string;
+  quantity: number;
+  optionIds: string[];
+  notes?: string;
+  /** Nombre del catálogo vivo; si el producto ya no está, el del snapshot. */
+  nombre: string;
+  imagenUrl?: string;
+  opciones: OrderItemOption[];
+  /** `null` cuando no hay precio confiable. */
+  unitPriceCents: Cents | null;
+  lineTotalCents: Cents | null;
+  disponible: boolean;
+  motivo?: MotivoLinea;
+  /** El precio del catálogo difiere del que la persona vio al agregar. */
+  precioCambio: boolean;
+  precioAnteriorCents?: Cents;
+  /** Tope de unidades cuando el producto lleva control de stock. */
+  maximo?: number;
+}
+
+export interface CarritoResuelto {
+  lineas: LineaResuelta[];
+  /** Suma SOLO de las líneas comprables: un total con un agotado adentro miente. */
+  subtotalCents: Cents;
+  unidades: number;
+  hayProblemas: boolean;
+  hayCambiosDePrecio: boolean;
+}
+
+function motivoDe(
+  producto: Product,
+  cantidad: number,
+  ahora: Date,
+  zona: string
+): MotivoLinea | undefined {
+  if (producto.priceCents <= 0) return "INVALID_PRICE";
+  if (!producto.active) return "INACTIVE";
+  if (producto.soldOut) return "SOLD_OUT";
+  if (producto.stockQuantity !== null && producto.stockQuantity < cantidad) {
+    return "OUT_OF_STOCK";
+  }
+  if (!disponibleAhora(producto.availability, ahora, zona)) return "OUT_OF_HOURS";
+  return undefined;
+}
+
+export function resolverCarrito(
+  lineas: readonly LineaCarrito[],
+  productos: readonly Product[],
+  ahora: Date = new Date(),
+  zona: string = ZONA_HORARIA
+): CarritoResuelto {
+  const porId = new Map(productos.map((p) => [p.id, p]));
+
+  const resueltas = lineas.map<LineaResuelta>((linea) => {
+    const producto = porId.get(linea.productId);
+
+    /* El producto desapareció del catálogo: la línea NO se borra sola. Se
+       muestra con lo último que se sabía de ella y sin precio, para que la
+       persona la saque a conciencia. */
+    if (!producto) {
+      return {
+        lineId: linea.lineId,
+        productId: linea.productId,
+        quantity: linea.quantity,
+        optionIds: linea.optionIds,
+        notes: linea.notes,
+        nombre: linea.vista.nombre,
+        imagenUrl: linea.vista.imagenUrl,
+        opciones: [],
+        unitPriceCents: null,
+        lineTotalCents: null,
+        disponible: false,
+        motivo: "NOT_FOUND",
+        precioCambio: false,
+      };
+    }
+
+    /* Las opciones se releen del producto vivo: si una dejó de existir o de
+       estar disponible, la línea queda marcada en vez de cobrarse igual. */
+    const opciones: OrderItemOption[] = [];
+    let opcionesRotas = false;
+    for (const optionId of linea.optionIds) {
+      const encontrada = grupoDeOpcion(producto, optionId);
+      if (!encontrada || !encontrada.opcion.available) {
+        opcionesRotas = true;
+        continue;
+      }
+      opciones.push({
+        optionId,
+        groupName: encontrada.grupo.name,
+        optionName: encontrada.opcion.name,
+        priceDeltaCents: encontrada.opcion.priceDeltaCents,
+      });
+    }
+
+    const motivo = opcionesRotas
+      ? "OPTIONS_CHANGED"
+      : motivoDe(producto, linea.quantity, ahora, zona);
+    const unitario = precioUnitario(producto, opciones);
+    const precioValido = producto.priceCents > 0;
+
+    return {
+      lineId: linea.lineId,
+      productId: linea.productId,
+      quantity: linea.quantity,
+      optionIds: linea.optionIds,
+      notes: linea.notes,
+      nombre: producto.name,
+      imagenUrl: producto.imageUrl ?? linea.vista.imagenUrl,
+      opciones,
+      unitPriceCents: precioValido ? unitario : null,
+      lineTotalCents: precioValido
+        ? multiplicarCents(unitario, linea.quantity)
+        : null,
+      disponible: motivo === undefined,
+      motivo,
+      /* Se avisa el cambio aunque la línea siga comprable: el precio nuevo es
+         el que vale, pero la persona tiene que enterarse. */
+      precioCambio: precioValido && unitario !== linea.vista.precioUnitarioCents,
+      precioAnteriorCents: linea.vista.precioUnitarioCents,
+      maximo: producto.stockQuantity ?? undefined,
+    };
+  });
+
+  return {
+    lineas: resueltas,
+    subtotalCents: sumarCents(
+      resueltas.filter((l) => l.disponible).map((l) => l.lineTotalCents ?? 0)
+    ),
+    unidades: resueltas
+      .filter((l) => l.disponible)
+      .reduce((total, l) => total + l.quantity, 0),
+    hayProblemas: resueltas.some((l) => !l.disponible),
+    hayCambiosDePrecio: resueltas.some((l) => l.precioCambio),
+  };
 }

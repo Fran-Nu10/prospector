@@ -1,4 +1,5 @@
 import type { ClientData } from "../../web/lib/schema";
+import type { FuenteCatalogo } from "../../web/lib/ecommerce/vistas";
 import Nav from "./Nav";
 import HeroExperience from "./HeroExperience";
 import MenuSeccion from "./MenuSeccion";
@@ -9,7 +10,12 @@ import Galeria from "./Galeria";
 import ComoPedir from "./ComoPedir";
 import Horarios from "./Horarios";
 import PieDePagina from "./PieDePagina";
-import { itemDestacado } from "./menu";
+import TiendaProvider from "./ecommerce/TiendaProvider";
+import AvisoAgregado from "./ecommerce/AvisoAgregado";
+import BotonCarrito from "./ecommerce/BotonCarrito";
+import CarritoHoja from "./ecommerce/CarritoHoja";
+import ProductoHoja from "./ecommerce/ProductoHoja";
+import { destacadoDeCatalogo } from "./menu";
 
 /*
  * Plantilla `hamburgueseria` — póster punk nocturno (ver DESIGN.md).
@@ -49,12 +55,26 @@ function waHref(whatsapp: string) {
   return `https://wa.me/${whatsapp.replace(/\D/g, "")}`;
 }
 
-export default function Template({ data }: { data: ClientData }) {
-  const { menu, hours, gallery, reviews, ordering } = data;
+export default function Template({
+  data,
+  fuente,
+}: {
+  data: ClientData;
+  /**
+   * El catálogo, resuelto en el servidor. En modo `ecommerce` la página vende;
+   * en modo `carta` se ve igual y el pedido sigue saliendo por WhatsApp. La
+   * plantilla NO lee `data.menu`: la única fuente del menú es esta.
+   */
+  fuente: FuenteCatalogo;
+}) {
+  const { hours, gallery, reviews, ordering } = data;
 
   const hrefPedido = data.whatsapp ? waHref(data.whatsapp) : undefined;
 
-  const tieneMenu = Boolean(menu?.length);
+  const tieneMenu =
+    fuente.modo === "carta"
+      ? fuente.secciones.length > 0
+      : fuente.productos.length > 0;
   const tienePlancha = Boolean(data.planchaViva?.headline);
   const tieneHistoria = Boolean(data.about || data.highlights?.length);
   const tieneResenas = Boolean(reviews?.length);
@@ -80,90 +100,95 @@ export default function Template({ data }: { data: ClientData }) {
   return (
     /* overflow-x clip y no hidden: `hidden` convertiría al contenedor en el
        scroller y rompería los sticky de la nav y de la firma. */
-    <div className="min-h-screen overflow-x-clip bg-noche font-body text-hueso">
-      <Nav
-        data={data}
-        hrefPedido={hrefPedido}
-        tieneMenu={tieneMenu}
-        tieneHorarios={tieneHorarios}
-      />
-
-      <HeroExperience
-        data={data}
-        numero={numero("hero")}
-        hrefPedido={hrefPedido}
-        destacado={itemDestacado(menu)}
-      />
-
-      {tieneMenu && menu && (
-        <MenuSeccion
-          menu={menu}
-          numero={numero("menu")}
-          whatsapp={data.whatsapp}
-        />
-      )}
-
-      {/* Va inmediatamente después del menú: es el segundo pico visual y
-          necesita el ancho completo del viewport, así que no puede vivir
-          dentro de la sección del menú (ver nota de composición arriba). */}
-      {tienePlancha && data.planchaViva && (
-        <PlanchaViva
-          plancha={data.planchaViva}
-          numero={numero("plancha")}
-          hrefPedido={hrefPedido}
-        />
-      )}
-
-      {tieneHistoria && <Historia data={data} numero={numero("historia")} />}
-
-      {tieneResenas && reviews && (
-        <Resenas
-          reviews={reviews}
-          rating={data._meta?.rating}
-          reviewCount={data._meta?.reviewCount}
-          numero={numero("resenas")}
-        />
-      )}
-
-      {tieneGaleria && gallery && (
-        <Galeria
-          gallery={gallery}
-          nombre={data.name}
-          numero={numero("galeria")}
-        />
-      )}
-
-      {tieneComoPedir && ordering && (
-        <ComoPedir
-          steps={ordering.steps}
-          note={ordering.note}
-          whatsapp={data.whatsapp}
-          numero={numero("comoPedir")}
-        />
-      )}
-
-      {tieneHorarios && (
-        <Horarios
+    <TiendaProvider fuente={fuente}>
+      <div className="min-h-screen overflow-x-clip bg-noche font-body text-hueso">
+        <Nav
           data={data}
-          numero={numero("horarios")}
           hrefPedido={hrefPedido}
+          tieneMenu={tieneMenu}
+          tieneHorarios={tieneHorarios}
+          carrito={<BotonCarrito />}
         />
-      )}
 
-      <PieDePagina
-        data={data}
-        hrefPedido={hrefPedido}
-        tieneMenu={tieneMenu}
-        tieneHorarios={tieneHorarios}
-      />
+        <HeroExperience
+          data={data}
+          numero={numero("hero")}
+          hrefPedido={hrefPedido}
+          destacado={destacadoDeCatalogo(fuente)}
+        />
 
-      {/* El botón de pedidos FIJO está fuera de render a propósito: se
-          superponía con el CTA de la franja del hero —en mobile directamente
-          lo tapaba— y con el nombre en brasa del footer. La acción sigue
-          disponible en dos lugares permanentes: el CTA "Pedir" de la nav, que
-          es sticky, y el de la franja del hero. Si más adelante se quiere
-          recuperar, va con lógica de visibilidad (aparecer solo cuando ni la
-          nav ni la franja están en pantalla), no siempre encendido. */}
-    </div>
+        {tieneMenu && (
+          <MenuSeccion numero={numero("menu")} whatsapp={data.whatsapp} />
+        )}
+
+        {/* Va inmediatamente después del menú: es el segundo pico visual y
+            necesita el ancho completo del viewport, así que no puede vivir
+            dentro de la sección del menú (ver nota de composición arriba). */}
+        {tienePlancha && data.planchaViva && (
+          <PlanchaViva
+            plancha={data.planchaViva}
+            numero={numero("plancha")}
+            hrefPedido={hrefPedido}
+          />
+        )}
+
+        {tieneHistoria && <Historia data={data} numero={numero("historia")} />}
+
+        {tieneResenas && reviews && (
+          <Resenas
+            reviews={reviews}
+            rating={data._meta?.rating}
+            reviewCount={data._meta?.reviewCount}
+            numero={numero("resenas")}
+          />
+        )}
+
+        {tieneGaleria && gallery && (
+          <Galeria
+            gallery={gallery}
+            nombre={data.name}
+            numero={numero("galeria")}
+          />
+        )}
+
+        {tieneComoPedir && ordering && (
+          <ComoPedir
+            steps={ordering.steps}
+            note={ordering.note}
+            whatsapp={data.whatsapp}
+            numero={numero("comoPedir")}
+          />
+        )}
+
+        {tieneHorarios && (
+          <Horarios
+            data={data}
+            numero={numero("horarios")}
+            hrefPedido={hrefPedido}
+          />
+        )}
+
+        <PieDePagina
+          data={data}
+          hrefPedido={hrefPedido}
+          tieneMenu={tieneMenu}
+          tieneHorarios={tieneHorarios}
+        />
+
+        {/* El botón de pedidos FIJO está fuera de render a propósito: se
+            superponía con el CTA de la franja del hero —en mobile directamente
+            lo tapaba— y con el nombre en brasa del footer. La acción sigue
+            disponible en dos lugares permanentes: el CTA "Pedir" de la nav, que
+            es sticky, y el de la franja del hero. Si más adelante se quiere
+            recuperar, va con lógica de visibilidad (aparecer solo cuando ni la
+            nav ni la franja están en pantalla), no siempre encendido. */}
+
+        {/* Las dos superficies del ecommerce. Se montan una sola vez, fuera del
+            flujo: viven en un portal y solo existen cuando están abiertas. */}
+        <ProductoHoja />
+        <CarritoHoja />
+        <AvisoAgregado />
+      </div>
+    </TiendaProvider>
   );
 }

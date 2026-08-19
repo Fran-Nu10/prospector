@@ -54,8 +54,15 @@ const BADGES: ReadonlySet<string> = new Set([
   "sin_tacc",
 ]);
 
-/** Avisos de migración: lo que no se pudo traducir se dice, no se disimula. */
+/**
+ * Avisos de migración: lo que no se pudo traducir se dice, no se disimula.
+ *
+ * `codigo` existe para que una verificación automática pueda detectarlo sin
+ * leer prosa. Al comprador nunca se le muestra: en la vitrina, un producto sin
+ * precio legible simplemente no se puede pedir.
+ */
 export interface AvisoSeed {
+  codigo: "INVALID_PRICE";
   producto: string;
   motivo: string;
 }
@@ -108,6 +115,7 @@ export function construirSeed(
          vez de heredar un precio adivinado. */
       if (precio === null) {
         avisos.push({
+          codigo: "INVALID_PRICE",
           producto: item.name,
           motivo: `precio ilegible o ausente (${JSON.stringify(item.price)})`,
         });
@@ -174,7 +182,9 @@ export function seedPorDefecto(ahora: Date = new Date()): DemoDatabase {
   const { db, avisos } = construirSeed(DATOS_PROSPECTO, ahora);
   if (avisos.length && typeof console !== "undefined") {
     for (const a of avisos) {
-      console.warn(`[ecommerce demo] ${a.producto}: ${a.motivo} → producto inactivo`);
+      console.warn(
+        `[ecommerce demo] ${a.codigo} · ${a.producto}: ${a.motivo} → producto inactivo`
+      );
     }
   }
   return db;

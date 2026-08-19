@@ -161,4 +161,12 @@ export interface EcommerceRepositories {
   catalog: CatalogRepository;
   settings: SettingsRepository;
   orders: OrderRepository;
+  /**
+   * Avisa que algo del catálogo o de la configuración cambió, para que la UI
+   * vuelva a leer. Hoy lo dispara la base demo cuando se escribe; mañana lo va
+   * a disparar Supabase Realtime. Es opcional a propósito: un proveedor sin
+   * notificaciones sigue cumpliendo el contrato, la UI simplemente no se
+   * refresca sola.
+   */
+  suscribir?(oyente: () => void): () => void;
 }

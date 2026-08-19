@@ -19,11 +19,13 @@ import {
   type MotionValue,
 } from "motion/react";
 import type {
-  MenuItem,
-  MenuSection as MenuSectionData,
-} from "../../web/lib/schema";
+  ProductoVista,
+  SeccionVista,
+} from "../../web/lib/ecommerce/vistas";
 import { hrefPedirProducto } from "./menu";
 import { DURACION_EXPANSION, EASE_BLOQUE } from "./animacion";
+import { textoMotivo } from "./ecommerce/copy";
+import { useTienda } from "./ecommerce/TiendaProvider";
 import { numeral, tamanoNombreProducto } from "./tipografia";
 
 /*
@@ -160,7 +162,7 @@ export type Variante = keyof typeof VARIANTE;
 /** Rango neutro: el motion value queda declarado pero no se mueve. */
 const QUIETO: [number, number] = [0, 1];
 
-const TAG_LABELS: Record<NonNullable<MenuItem["tag"]>, string> = {
+const TAG_LABELS: Record<NonNullable<ProductoVista["badge"]>, string> = {
   destacado: "La firma",
   nuevo: "Nuevo",
   vegano: "Vegano",
@@ -170,7 +172,7 @@ const TAG_LABELS: Record<NonNullable<MenuItem["tag"]>, string> = {
 const useLayoutEffectSeguro =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-type Producto = MenuItem;
+type Producto = ProductoVista;
 
 /* ---------------------------------------------------------------------------
  * ProductoMedia — lo único que sabe cómo se ve un producto.
@@ -184,9 +186,9 @@ function ProductoMedia({
   /** Solo el visible pide prioridad de carga; el resto va perezoso. */
   activo: boolean;
 }) {
-  const src = item.stageImage ?? item.image;
+  const src = item.stageImageUrl ?? item.imageUrl;
   if (!src) return null;
-  const flotante = Boolean(item.stageImage);
+  const flotante = Boolean(item.stageImageUrl);
 
   return (
     <div className="relative h-full w-full">
@@ -300,16 +302,17 @@ function ProductoSlide({
   variante: Variante;
 }) {
   const cfg = VARIANTE[variante];
+  const tienda = useTienda();
   const idPanel = useId();
   const href = hrefPedirProducto(whatsapp, item.name);
   /* Los ingredientes son de la variante principal: en acompañamientos, una
    * descripción de una línea no se despliega en nada. */
   const ingredientes = cfg.conIngredientes ? (item.ingredients ?? []) : [];
-  const etiqueta = item.tag ? TAG_LABELS[item.tag] : null;
-  const tieneMedia = Boolean(item.stageImage ?? item.image);
+  const etiqueta = item.badge ? TAG_LABELS[item.badge] : null;
+  const tieneMedia = Boolean(item.stageImageUrl ?? item.imageUrl);
   /* Solo el recorte con alfa puede pasar POR DELANTE del nombre. La foto
    * cuadrada de fallback es opaca: si se cruzara, borraría la palabra. */
-  const flotante = Boolean(item.stageImage);
+  const flotante = Boolean(item.stageImageUrl);
 
   /* --- Profundidad derivada de la posición horizontal ---
    * El centro de este slide cae en `indice / (total - 1)` del recorrido de la
@@ -528,19 +531,35 @@ function ProductoSlide({
             {/* Precio y acción son UNA unidad: misma fila, siempre juntos, y
                 nunca los separa un salto de línea. */}
             <div className="flex items-center justify-between gap-16 border-t border-negro pt-16">
-              {item.price && (
+              {item.priceLabel && (
                 <span className="font-mono text-subheading font-bold text-hueso">
-                  {item.price}
+                  {item.priceLabel}
                 </span>
               )}
-              {href && (
-                <a
-                  href={href}
-                  aria-label={`Pedir ${item.name} por WhatsApp`}
-                  className="ml-auto inline-flex min-h-[48px] items-center rounded-button bg-brasa px-32 text-body font-bold text-hueso"
+              {/* Con ecommerce detrás, la acción del producto es AGREGAR y abre
+                  su hoja; sin ecommerce, la carta sigue pidiendo por WhatsApp
+                  exactamente como antes. Un producto que no se puede vender
+                  muestra el motivo en el botón y no se deja tocar. */}
+              {tienda?.interactivo ? (
+                <button
+                  type="button"
+                  onClick={() => tienda.abrirProducto(item)}
+                  disabled={!item.comprable}
+                  aria-label={`Agregar ${item.name} al pedido`}
+                  className="ml-auto inline-flex min-h-[48px] items-center rounded-button bg-brasa px-32 text-body font-bold text-hueso disabled:bg-carbon disabled:text-rescoldo"
                 >
-                  Pedir
-                </a>
+                  {item.comprable ? "Agregar" : (textoMotivo(item.motivo) ?? "No disponible")}
+                </button>
+              ) : (
+                href && (
+                  <a
+                    href={href}
+                    aria-label={`Pedir ${item.name} por WhatsApp`}
+                    className="ml-auto inline-flex min-h-[48px] items-center rounded-button bg-brasa px-32 text-body font-bold text-hueso"
+                  >
+                    Pedir
+                  </a>
+                )
               )}
             </div>
 
@@ -671,7 +690,7 @@ function Vitrina({
   entrada,
   variante,
 }: {
-  section: MenuSectionData;
+  section: SeccionVista;
   whatsapp?: string;
   animado: boolean;
   /** Solo la vitrina principal hereda la entrada del hero. */
@@ -886,15 +905,17 @@ function Vitrina({
  * ------------------------------------------------------------------------ */
 
 export default function MenuSeccion({
-  menu,
   numero,
   whatsapp,
 }: {
-  menu: MenuSectionData[];
   numero: number;
   /** Número del prospecto. Sin él no se renderiza ningún CTA de pedido. */
   whatsapp?: string;
 }) {
+  /* El menú NO lee el JSON: lee el catálogo de la tienda, que en el servidor ya
+     viene resuelto y en el cliente se refresca solo. Una sola fuente. */
+  const tienda = useTienda();
+  const secciones = tienda?.secciones ?? [];
   const reducirMovimiento = useReducedMotion();
   const [sinMovimiento, setSinMovimiento] = useState(false);
   useLayoutEffectSeguro(() => {
@@ -911,9 +932,11 @@ export default function MenuSeccion({
     offset: ["start end", "start start"],
   });
 
-  const indiceVitrina = menu.findIndex((s) => s.items.some((i) => i.image));
-  const vitrina = indiceVitrina >= 0 ? menu[indiceVitrina] : null;
-  const resto = menu.filter((_, i) => i !== indiceVitrina);
+  const indiceVitrina = secciones.findIndex((s) =>
+    s.items.some((i) => i.imageUrl ?? i.stageImageUrl)
+  );
+  const vitrina = indiceVitrina >= 0 ? secciones[indiceVitrina] : null;
+  const resto = secciones.filter((_, i) => i !== indiceVitrina);
 
   return (
     <section
@@ -948,7 +971,7 @@ export default function MenuSeccion({
               acompañamientos no puede leerse como un segundo hero, pero
               tampoco merece volver a ser una lista de texto plano. */}
           {resto.map((section) => (
-            <div key={section.title} className="mt-64 md:mt-80">
+            <div key={section.id} className="mt-64 md:mt-80">
               <Vitrina
                 section={section}
                 whatsapp={whatsapp}

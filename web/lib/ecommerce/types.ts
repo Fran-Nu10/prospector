@@ -351,6 +351,25 @@ export interface Cart {
   items: CartItem[];
 }
 
+/**
+ * Línea tal como la guarda el carrito del navegador.
+ *
+ * `vista` es un snapshot de PRESENTACIÓN —para pintar la línea sin esperar al
+ * catálogo— y NO es autoridad: el precio bueno siempre se vuelve a resolver
+ * contra el producto vivo. Se conserva para poder decirle al cliente "esto
+ * costaba X y ahora cuesta Y" en vez de cambiarle el número por debajo.
+ */
+export interface LineaCarrito extends CartItem {
+  /** Identidad de la línea: mismo producto + mismas opciones + misma nota. */
+  lineId: string;
+  vista: {
+    nombre: string;
+    precioUnitarioCents: Cents;
+    imagenUrl?: string;
+  };
+  agregadoEn: IsoDate;
+}
+
 export interface OrderDraft {
   clientRequestId: string;
   items: CartItem[];

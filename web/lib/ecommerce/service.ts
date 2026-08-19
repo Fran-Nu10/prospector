@@ -43,4 +43,14 @@ export function usarProveedor(repos: EcommerceRepositories): void {
   repositorios = repos;
 }
 
+/**
+ * Suscripción a cambios del catálogo y la configuración. La UI la usa sin
+ * saber si detrás hay `localStorage` o un websocket: con el proveedor demo se
+ * dispara al escribir, con Supabase lo hará Realtime. Si el proveedor no
+ * notifica, devuelve una baja que no hace nada y la UI sigue funcionando.
+ */
+export function suscribirEcommerce(oyente: () => void): () => void {
+  return obtenerEcommerce().suscribir?.(oyente) ?? (() => {});
+}
+
 export type { EcommerceRepositories } from "./repositories";
