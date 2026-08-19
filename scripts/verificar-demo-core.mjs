@@ -40,6 +40,8 @@ execFileSync(
     "lib/ecommerce/demo/database.ts",
     "lib/ecommerce/domain.ts",
     "lib/ecommerce/money.ts",
+    "lib/ecommerce/vistas.ts",
+    "lib/ecommerce/carrito.ts",
     "--outDir", SALIDA,
     "--rootDir", RAIZ,
     "--module", "commonjs",
@@ -67,6 +69,18 @@ seccion("SSR (sin window)");
   ok(productos.length > 0, `el catálogo se lee en servidor (${productos.length} productos)`);
   ok((await orders.list()).length === 0, "sin pedidos en el servidor");
   ok(conf.timezone === "America/Montevideo", "zona horaria explícita");
+
+  /* Las dos piezas nuevas también se importan en servidor sin tocar window. */
+  const { cargarCatalogo } = require_(MOD("vistas.js"));
+  const { leerCarrito, snapshotCarritoServidor } = require_(MOD("carrito.js"));
+  const fuente = await cargarCatalogo("ejemplo-burger-pocitos");
+  ok(fuente?.modo === "ecommerce", "el catálogo se resuelve en servidor");
+  ok(
+    (await cargarCatalogo("otro-prospecto")) === null,
+    "otro prospecto NO recibe el catálogo de esta instalación"
+  );
+  ok(leerCarrito().items.length === 0, "el carrito arranca vacío en servidor");
+  ok(snapshotCarritoServidor().items.length === 0, "snapshot de servidor vacío");
 }
 
 /* --- 3. Seed contra el JSON real ----------------------------------------- */
@@ -266,7 +280,206 @@ seccion("Pedidos");
   ok(cerrado === "STORE_CLOSED", "con la tienda cerrada no se toman pedidos");
 }
 
-/* --- 5. Limpieza ---------------------------------------------------------- */
+/* --- 5. Vistas: qué se puede comprar y qué no ----------------------------- */
+
+seccion("Vistas de producto");
+{
+  const { catalog } = recargar();
+  const { vistaDeProducto } = require_(MOD("vistas.js"));
+  const productos = await catalog.listProducts();
+  const base = productos[0];
+
+  ok(vistaDeProducto(base).comprable, "un producto activo con precio es comprable");
+  ok(
+    vistaDeProducto({ ...base, active: false }).motivo === "INACTIVE",
+    "inactivo → INACTIVE, no comprable"
+  );
+  ok(
+    vistaDeProducto({ ...base, soldOut: true }).motivo === "SOLD_OUT",
+    "agotado → SOLD_OUT"
+  );
+  ok(
+    vistaDeProducto({ ...base, stockQuantity: 0 }).motivo === "OUT_OF_STOCK",
+    "sin stock → OUT_OF_STOCK"
+  );
+  const sinPrecio = vistaDeProducto({ ...base, priceCents: 0 });
+  ok(
+    sinPrecio.motivo === "INVALID_PRICE" && sinPrecio.priceLabel === null,
+    "precio inválido → INVALID_PRICE y sin etiqueta de precio"
+  );
+  ok(
+    vistaDeProducto(base).priceLabel === formatearDinero(base.priceCents),
+    "el precio que se muestra sale del formateador único"
+  );
+
+  /* El aviso del seed nombra el código: un test futuro puede detectarlo. */
+  const { construirSeed } = require_(MOD("demo/seed.js"));
+  const conRoto = JSON.parse(JSON.stringify(prospecto));
+  conRoto.menu[0].items[0].price = "cuatrocientos";
+  const { avisos, db } = construirSeed(conRoto);
+  ok(
+    avisos.some((a) => a.codigo === "INVALID_PRICE"),
+    "un precio ilegible produce el aviso INVALID_PRICE"
+  );
+  ok(
+    db.products[0].active === false && db.products[0].priceCents === 0,
+    "y el producto queda inactivo, sin precio inventado"
+  );
+}
+
+/* --- 6. Carrito ----------------------------------------------------------- */
+
+seccion("Carrito");
+{
+  const carrito = require_(MOD("carrito.js"));
+  const { resolverCarrito } = require_(MOD("domain.js"));
+  const { catalog } = recargar();
+  const productos = await catalog.listProducts();
+  const [a, b] = productos;
+
+  const vista = (p) => ({
+    nombre: p.name,
+    precioUnitarioCents: p.priceCents,
+    imagenUrl: p.imageUrl,
+  });
+
+  carrito.vaciarCarrito();
+  ok(carrito.leerCarrito().items.length === 0, "arranca vacío");
+
+  carrito.agregarAlCarrito({ productId: a.id, quantity: 1, vista: vista(a) });
+  carrito.agregarAlCarrito({ productId: a.id, quantity: 2, vista: vista(a) });
+  let estado = carrito.leerCarrito();
+  ok(
+    estado.items.length === 1 && estado.items[0].quantity === 3,
+    `agregar dos veces el mismo producto suma cantidades (${estado.items[0]?.quantity})`
+  );
+
+  carrito.agregarAlCarrito({
+    productId: a.id,
+    quantity: 1,
+    notes: "sin cebolla",
+    vista: vista(a),
+  });
+  ok(
+    carrito.leerCarrito().items.length === 2,
+    "con otra aclaración es OTRA línea, no la misma"
+  );
+
+  carrito.agregarAlCarrito({ productId: b.id, quantity: 1, vista: vista(b) });
+  let resuelto = resolverCarrito(carrito.leerCarrito().items, productos);
+  const esperado = a.priceCents * 3 + a.priceCents * 1 + b.priceCents;
+  ok(
+    resuelto.subtotalCents === esperado,
+    `el subtotal sale del catálogo (${resuelto.subtotalCents} = ${esperado})`
+  );
+  ok(resuelto.unidades === 5, `unidades correctas (${resuelto.unidades})`);
+
+  carrito.cambiarCantidad(resuelto.lineas[0].lineId, 1);
+  resuelto = resolverCarrito(carrito.leerCarrito().items, productos);
+  ok(resuelto.lineas[0].quantity === 1, "se puede bajar la cantidad");
+
+  carrito.cambiarCantidad(resuelto.lineas[0].lineId, 0);
+  ok(
+    carrito.leerCarrito().items.length === 2,
+    "bajar a cero elimina la línea"
+  );
+
+  carrito.quitarDelCarrito(carrito.leerCarrito().items[0].lineId);
+  ok(carrito.leerCarrito().items.length === 1, "quitar elimina una línea");
+
+  /* --- el precio confiable es el del catálogo, no el del snapshot --- */
+  const items = carrito.leerCarrito().items;
+  const conPrecioViejo = items.map((l) => ({
+    ...l,
+    vista: { ...l.vista, precioUnitarioCents: 1 },
+  }));
+  const conCambio = resolverCarrito(conPrecioViejo, productos);
+  ok(
+    conCambio.lineas[0].unitPriceCents === b.priceCents,
+    "el precio resuelto ignora el snapshot del navegador"
+  );
+  ok(
+    conCambio.hayCambiosDePrecio && conCambio.lineas[0].precioCambio,
+    "y el cambio de precio queda marcado para avisarle a la persona"
+  );
+  ok(
+    conCambio.subtotalCents === b.priceCents * conCambio.lineas[0].quantity,
+    "el total NO usa el precio que mandaría el cliente"
+  );
+
+  /* --- producto desactivado o borrado mientras estaba en el carrito --- */
+  const desactivado = productos.map((p) =>
+    p.id === b.id ? { ...p, active: false } : p
+  );
+  const conInactivo = resolverCarrito(items, desactivado);
+  ok(
+    conInactivo.hayProblemas && conInactivo.lineas[0].motivo === "INACTIVE",
+    "un producto desactivado marca la línea"
+  );
+  ok(
+    conInactivo.subtotalCents === 0,
+    "y NO suma al total mientras siga adentro"
+  );
+  ok(conInactivo.lineas.length === 1, "pero la línea no desaparece sola");
+
+  const sinElProducto = resolverCarrito(items, []);
+  ok(
+    sinElProducto.lineas[0].motivo === "NOT_FOUND" &&
+      sinElProducto.lineas[0].nombre === b.name,
+    "un producto borrado se muestra con su último nombre conocido"
+  );
+  ok(
+    sinElProducto.lineas[0].unitPriceCents === null,
+    "sin producto no hay precio que mostrar"
+  );
+
+  /* --- persistencia y basura --- */
+  const clave = [...almacen.keys()].find((k) => k.includes("carrito"));
+  ok(Boolean(clave), "el carrito se guarda con su propia clave versionada");
+
+  const antes = carrito.leerCarrito().items.length;
+  recargar();
+  const carrito2 = require_(MOD("carrito.js"));
+  ok(
+    carrito2.leerCarrito().items.length === antes,
+    "el carrito sobrevive a la recarga"
+  );
+
+  almacen.set(clave, "{roto");
+  recargar();
+  ok(
+    require_(MOD("carrito.js")).leerCarrito().items.length === 0,
+    "un carrito ilegible arranca vacío en vez de romper"
+  );
+
+  almacen.set(clave, JSON.stringify({ version: 99, items: [{ hola: 1 }] }));
+  recargar();
+  ok(
+    require_(MOD("carrito.js")).leerCarrito().items.length === 0,
+    "una versión vieja se descarta"
+  );
+
+  almacen.set(
+    clave,
+    JSON.stringify({
+      version: 1,
+      items: [{ lineId: "x", productId: a.id, quantity: 1, optionIds: [], vista: vista(a) }, { basura: true }],
+    })
+  );
+  recargar();
+  ok(
+    require_(MOD("carrito.js")).leerCarrito().items.length === 1,
+    "una línea corrupta se descarta sin perder las buenas"
+  );
+
+  require_(MOD("carrito.js")).vaciarCarrito();
+  ok(
+    require_(MOD("carrito.js")).leerCarrito().items.length === 0,
+    "vaciar deja el carrito en cero"
+  );
+}
+
+/* --- 7. Limpieza ---------------------------------------------------------- */
 
 rmSync(SALIDA, { recursive: true, force: true });
 console.log(fallos === 0 ? "\nTODO OK" : `\n${fallos} FALLO(S)`);
