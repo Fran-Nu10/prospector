@@ -16,6 +16,7 @@ import BotonCarrito from "./ecommerce/BotonCarrito";
 import CarritoHoja from "./ecommerce/CarritoHoja";
 import ProductoHoja from "./ecommerce/ProductoHoja";
 import { destacadoDeCatalogo } from "./menu";
+import { enlaceWhatsapp } from "../../web/lib/ecommerce/whatsapp";
 
 /*
  * Plantilla `hamburgueseria` — póster punk nocturno (ver DESIGN.md).
@@ -51,10 +52,6 @@ import { destacadoDeCatalogo } from "./menu";
  * acá según qué trajo el JSON, así una demo sin galería no saltea un número.
  */
 
-function waHref(whatsapp: string) {
-  return `https://wa.me/${whatsapp.replace(/\D/g, "")}`;
-}
-
 export default function Template({
   data,
   fuente,
@@ -69,7 +66,7 @@ export default function Template({
 }) {
   const { hours, gallery, reviews, ordering } = data;
 
-  const hrefPedido = data.whatsapp ? waHref(data.whatsapp) : undefined;
+  const hrefPedido = enlaceWhatsapp(data.whatsapp) ?? undefined;
 
   const tieneMenu =
     fuente.modo === "carta"

@@ -1,3 +1,4 @@
+import { enlacePedirProducto } from "../../web/lib/ecommerce/whatsapp";
 import {
   vistaDeProducto,
   type FuenteCatalogo,
@@ -17,19 +18,15 @@ import {
 /**
  * Enlace de pedido para un producto concreto.
  *
- * Devuelve null si el prospecto no tiene WhatsApp cargado: sin número no se
- * renderiza ningún CTA. Inventar un teléfono o una URL de fallback sería
- * exactamente el tipo de dato falso que prohíbe el CLAUDE.md, y el menú sigue
- * funcionando como carta.
+ * Delega en el único constructor de enlaces del sistema. Sigue devolviendo
+ * `null` sin número: sin WhatsApp cargado no se renderiza ningún CTA, que es lo
+ * que evita inventarle un teléfono al negocio.
  */
 export function hrefPedirProducto(
   whatsapp: string | undefined,
   nombre: string
 ): string | null {
-  const numero = whatsapp?.replace(/\D/g, "");
-  if (!numero) return null;
-  const texto = encodeURIComponent(`Hola, quiero pedir: ${nombre}.`);
-  return `https://wa.me/${numero}?text=${texto}`;
+  return enlacePedirProducto(whatsapp, nombre);
 }
 
 /**

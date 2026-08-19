@@ -7,6 +7,10 @@ import {
   suscribirEcommerce,
 } from "../../../web/lib/ecommerce/service";
 import type { Order } from "../../../web/lib/ecommerce/types";
+import {
+  enlaceConsultarPedido,
+  numeroVisible,
+} from "../../../web/lib/ecommerce/whatsapp";
 import { textoEstado } from "./copy";
 
 /*
@@ -94,15 +98,10 @@ export default function PedidoVista({
   }
 
   const estado = textoEstado(pedido.status);
-  const numero = normalizarNumero(pedido.orderNumber);
-  const wa = whatsapp?.replace(/\D/g, "");
-  /* Solo el número de pedido: la URL de WhatsApp queda en el historial del
-     teléfono y no tiene por qué llevar dirección ni teléfono adentro. */
-  const hrefWhatsapp = wa
-    ? `https://wa.me/${wa}?text=${encodeURIComponent(
-        `Hola, quiero consultar por mi pedido ${numero}.`
-      )}`
-    : null;
+  const numero = numeroVisible(pedido.orderNumber);
+  /* El enlace lo arma el helper compartido: solo el número de pedido, nunca
+     dirección ni total (la URL queda en el historial del teléfono). */
+  const hrefWhatsapp = enlaceConsultarPedido(whatsapp, pedido.orderNumber);
 
   return (
     <div className="flex flex-col gap-32">
@@ -231,9 +230,4 @@ export default function PedidoVista({
       </div>
     </div>
   );
-}
-
-/** `0001` → `#0001`. El numeral se agrega al mostrar, no se guarda. */
-function normalizarNumero(numero: string): string {
-  return numero.startsWith("#") ? numero : `#${numero}`;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { OrderStep } from "../../web/lib/schema";
+import { enlaceWhatsapp } from "../../web/lib/ecommerce/whatsapp";
 import { EtiquetaSeccion } from "./SeccionTitulo";
 import { RevelarBloque, RevelarLineas } from "./RevelarLineas";
 import { delayStagger } from "./animacion";
@@ -62,10 +63,6 @@ function Icono({ nombre }: { nombre: NonNullable<OrderStep["icon"]> }) {
   );
 }
 
-function waHref(whatsapp: string) {
-  return `https://wa.me/${whatsapp.replace(/\D/g, "")}`;
-}
-
 export default function ComoPedir({
   steps,
   note,
@@ -125,7 +122,7 @@ export default function ComoPedir({
           >
             {whatsapp && (
               <a
-                href={waHref(whatsapp)}
+                href={enlaceWhatsapp(whatsapp) ?? undefined}
                 className="rounded-button border border-negro bg-brasa px-32 py-16 text-body font-bold text-hueso"
               >
                 Pedir por WhatsApp
