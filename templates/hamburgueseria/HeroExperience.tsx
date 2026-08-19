@@ -10,7 +10,8 @@ import {
   useTransform,
   type MotionValue,
 } from "motion/react";
-import type { ClientData, MenuItem } from "../../web/lib/schema";
+import type { ClientData } from "../../web/lib/schema";
+import type { ProductoVista } from "../../web/lib/ecommerce/vistas";
 import {
   ALTO_ARMADO,
   ALTO_NAV,
@@ -87,8 +88,8 @@ export default function HeroExperience({
   numero: number;
   /** Acción primaria de la página (WhatsApp si el prospecto lo tiene). */
   hrefPedido?: string;
-  /** Ítem destacado del menú — lo elige el JSON, no la plantilla. */
-  destacado: MenuItem | null;
+  /** Producto destacado — sale del catálogo, no de una segunda lectura. */
+  destacado: ProductoVista | null;
 }) {
   const reducirMovimiento = useReducedMotion();
   const esAngosto = useEsAngosto();
@@ -445,9 +446,9 @@ export default function HeroExperience({
                 {destacado.description}
               </p>
             )}
-            {destacado.price && (
+            {destacado.priceLabel && (
               <span className="font-mono text-subheading font-bold text-hueso">
-                {destacado.price}
+                {destacado.priceLabel}
               </span>
             )}
           </motion.div>
