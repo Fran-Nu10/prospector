@@ -20,7 +20,17 @@ import type { DemoDatabase } from "./database";
 import { seedPorDefecto } from "./seed";
 
 /** Versiones anteriores que esta migración sabe leer. */
-export const VERSIONES_MIGRABLES: readonly number[] = [2];
+export const VERSIONES_MIGRABLES: readonly number[] = [2, 3];
+
+/**
+ * Versión a la que migra. Literal —no importada de `database.ts`— por la
+ * misma razón que el seed guarda la suya propia: `database.ts` importa este
+ * módulo, así que importar la versión desde ahí cerraría el círculo. Las dos
+ * constantes se suben juntas a mano; si alguna vez se desincronizan, la
+ * migración deja de dispararse y el síntoma es evidente (una base vieja que
+ * no se actualiza), no un bug silencioso.
+ */
+const VERSION_ACTUAL = 4 as const;
 
 /**
  * Completa las imágenes que faltan usando las del seed actual.
@@ -64,18 +74,27 @@ export function completarImagenesDelSeed(
 }
 
 /**
- * Lleva una base guardada de v2 a v3.
+ * Lleva una base guardada (v2 o v3) a la versión actual.
  *
- * v3 no cambia la FORMA de nada: cambia lo que el seed sabe de las imágenes.
- * Por eso la migración es de contenido y no de estructura, y por eso alcanza
- * con completar los huecos.
+ * Ninguna versión migrable cambia la FORMA de nada: cambian las rutas que el
+ * seed conoce. Por eso la migración es de CONTENIDO y no de estructura, y por
+ * eso alcanza con completar los huecos —sea que a la base le falte el recorte
+ * de Bacon Fest (v2) o el `stageImage` de los acompañamientos (v3): es la
+ * misma operación, `completarImagenesDelSeed`, aplicada de una sola vez sin
+ * importar de qué versión se venga.
  *
- * Devuelve `null` si lo guardado no es una v2 reconocible; ahí sí corresponde
- * volver al seed, porque no hay nada rescatable.
+ * Devuelve `null` si lo guardado no es una versión reconocible; ahí sí
+ * corresponde volver al seed, porque no hay nada rescatable.
  */
 export function migrarBase(guardada: unknown): DemoDatabase | null {
   if (!guardada || typeof guardada !== "object") return null;
   const base = guardada as Partial<DemoDatabase> & { version?: number };
+
+  /* Ya está en la versión actual: no es una migración, es la base de hoy. La
+     función que la levantó (`leerDb`) ni siquiera debería llamar acá para ese
+     caso, pero el chequeo cuesta una línea y evita un downgrade accidental si
+     algún día se reordena esa lógica. */
+  if (base.version === VERSION_ACTUAL) return base as DemoDatabase;
 
   if (typeof base.version !== "number" || !VERSIONES_MIGRABLES.includes(base.version)) {
     return null;
@@ -93,14 +112,14 @@ export function migrarBase(guardada: unknown): DemoDatabase | null {
   const { productos, completados } = completarImagenesDelSeed(base.products);
   if (completados.length && typeof console !== "undefined") {
     console.info(
-      `[ecommerce demo] base v${base.version} → v3: se completaron las imágenes de ${completados.join(", ")}. ` +
+      `[ecommerce demo] base v${base.version} → v${VERSION_ACTUAL}: se completaron las imágenes de ${completados.join(", ")}. ` +
         "Pedidos, precios y configuración quedaron intactos."
     );
   }
 
   return {
     ...(base as DemoDatabase),
-    version: 3,
+    version: VERSION_ACTUAL,
     products: productos,
   };
 }

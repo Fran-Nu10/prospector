@@ -122,18 +122,21 @@
         {
           "name": "Papas de la casa",
       "image": "/hamburgueseria/acompanamientos-v2/papas-de-la-casa.webp",
+      "stageImage": "/hamburgueseria/acompanamientos-v2/papas-de-la-casa.webp",
           "description": "Corte grueso, sal de romero",
           "price": "$220"
         },
         {
           "name": "Aros de cebolla",
       "image": "/hamburgueseria/acompanamientos-v2/aros-de-cebolla.webp",
+      "stageImage": "/hamburgueseria/acompanamientos-v2/aros-de-cebolla.webp",
           "description": "Rebozados a mano, salsa brava",
           "price": "$250"
         },
         {
           "name": "Nuggets",
       "image": "/hamburgueseria/acompanamientos-v2/nuggets.webp",
+      "stageImage": "/hamburgueseria/acompanamientos-v2/nuggets.webp",
           "description": "Pollo crocante, miel picante",
           "price": "$280"
         }

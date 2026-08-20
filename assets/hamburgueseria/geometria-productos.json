@@ -3,6 +3,8 @@
   "lineaBase": 0.875,
   "ladoPercibido": 1030,
   "altoVisibleMax": 0.58,
+  "ladoPercibidoAcomp": 1148,
+  "altoVisibleMaxAcomp": 0.7,
   "productos": {
     "bacon-fest": {
       "x": 0.1525,
@@ -38,6 +40,27 @@
       "ancho": 0.6412,
       "alto": 0.58,
       "escala": 0.8398
+    },
+    "aros-de-cebolla": {
+      "x": 0.1194,
+      "y": 0.2031,
+      "ancho": 0.7662,
+      "alto": 0.6719,
+      "escala": 0.9996
+    },
+    "nuggets": {
+      "x": 0.1212,
+      "y": 0.1806,
+      "ancho": 0.7412,
+      "alto": 0.6944,
+      "escala": 0.9697
+    },
+    "papas-de-la-casa": {
+      "x": 0.1163,
+      "y": 0.3119,
+      "ancho": 0.7606,
+      "alto": 0.5631,
+      "escala": 1.0
     }
   }
 }
