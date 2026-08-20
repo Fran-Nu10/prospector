@@ -44,6 +44,16 @@ export interface Category {
   /** Orden en la carta. Menor primero. */
   position: number;
   active: boolean;
+  /**
+   * Retirada de la administración sin borrarse.
+   *
+   * `active: false` es una decisión operativa REVERSIBLE que el dueño toma a
+   * diario ("hoy no hay postres"); `archived` es "esto ya no va más". Se
+   * separan porque una categoría archivada tampoco tiene que ensuciar los
+   * filtros del panel, y porque borrarla de verdad rompería los productos que
+   * la referencian y los pedidos que ya se cobraron.
+   */
+  archived: boolean;
 }
 
 /** Distintivo editorial del producto. Mismo vocabulario que `MenuItem.tag`. */
@@ -90,6 +100,12 @@ export interface ProductOptionGroup {
   minSelect: number;
   maxSelect: number;
   position: number;
+  /**
+   * Grupo apagado: no se ofrece y deja de ser obligatorio. Es lo que permite
+   * retirar "punto de cocción" un martes sin borrarlo ni bloquear la venta del
+   * producto por un mínimo que ya nadie puede cumplir.
+   */
+  active: boolean;
   options: ProductOption[];
 }
 
@@ -105,7 +121,11 @@ export interface Product {
   active: boolean;
   /** Se ve, pero no se puede pedir. Es distinto de `active: false`. */
   soldOut: boolean;
-  /** `null` = sin control de stock. Con número, decrece al crear el pedido. */
+  /**
+   * `null` = sin control de stock. Con número, decrece cuando el local ACEPTA
+   * el pedido —no cuando el cliente lo manda—, porque hasta ese momento nadie
+   * se comprometió a cocinarlo. Ver `stockApplied` en `Order`.
+   */
   stockQuantity: number | null;
   position: number;
   badge?: ProductBadge;
@@ -117,9 +137,27 @@ export interface Product {
   stageImageUrl?: string;
   optionGroups: ProductOptionGroup[];
   availability: ProductAvailability[];
+  /**
+   * Retirado del catálogo sin borrarse. Un producto NUNCA se elimina: los
+   * pedidos guardan copias, pero los reportes por producto siguen mirando este
+   * `id`, y un id huérfano convierte una venta en una fila sin nombre.
+   */
+  archived: boolean;
   createdAt: IsoDate;
   updatedAt: IsoDate;
 }
+
+/* ---------------------------------------------------------------------------
+ * Disponibilidad como UN modo
+ *
+ * En la base son dos campos (`soldOut` y `stockQuantity`) porque son dos cosas
+ * distintas: "no hay" es una decisión, "quedan tres" es una cuenta. Para quien
+ * opera el panel es UNA sola pregunta con tres respuestas, así que el panel
+ * elige un modo y el dominio lo traduce a los dos campos. La traducción vive en
+ * `domain.ts` y es la única: el JSX no toca `soldOut` a mano.
+ * ------------------------------------------------------------------------ */
+
+export type ModoDisponibilidad = "available" | "sold_out" | "limited";
 
 /* ---------------------------------------------------------------------------
  * Configuración operativa
@@ -134,6 +172,12 @@ export interface DeliveryZone {
   active: boolean;
   position: number;
   estimatedMinutes?: number;
+  /**
+   * Archivada: fuera del panel y de la tienda, pero viva para los pedidos que
+   * ya se entregaron ahí. Distinto de `active: false`, que es "hoy no salimos
+   * a esa zona".
+   */
+  archived: boolean;
 }
 
 /** Franja de atención, con el mismo criterio de minutos que `ProductAvailability`. */
@@ -342,6 +386,15 @@ export interface Order {
   notes?: string;
   estimatedMinutes?: number;
   rejectionReason?: string;
+  /**
+   * ¿Este pedido ya descontó stock?
+   *
+   * Es el pestillo que hace que descontar y reponer sean operaciones de UNA
+   * sola vez. Sin él, aceptar dos veces —dos pestañas, dos clics, un reintento—
+   * descuenta dos veces, y cancelar un pedido que nunca llegó a aceptarse
+   * repone unidades que jamás se restaron: el stock se infla o se hunde solo.
+   */
+  stockApplied: boolean;
   statusHistory: OrderStatusEvent[];
   createdAt: IsoDate;
   updatedAt: IsoDate;
@@ -427,7 +480,13 @@ export type EcommerceErrorCode =
   | "PAYMENT_METHOD_DISABLED"
   | "INVALID_TRANSITION"
   | "NOT_FOUND"
-  | "INVALID_INPUT";
+  | "INVALID_INPUT"
+  /* Administración del catálogo (fase 5). */
+  | "DUPLICATE_SLUG"
+  | "CATEGORY_NOT_EMPTY"
+  | "INVALID_IMAGE"
+  | "STOCK_INSUFFICIENT"
+  | "FORBIDDEN";
 
 export class EcommerceError extends Error {
   readonly code: EcommerceErrorCode;
@@ -452,4 +511,14 @@ export const LIMITES = {
   lineasPorPedido: 50,
   unidadesPorLinea: 99,
   largoObservaciones: 280,
+  /* Administración del catálogo: techos generosos, pero techos. Un nombre de
+     product de 4000 caracteres no es un producto, es un formulario mal usado. */
+  largoNombre: 80,
+  largoDescripcion: 400,
+  /* $ 99.999 por unidad. No es una regla del negocio: es el orden de magnitud
+     por encima del cual un precio es, con seguridad, un error de tipeo. */
+  precioMaximoCents: 9_999_900,
+  gruposPorProducto: 10,
+  opcionesPorGrupo: 20,
+  stockMaximo: 9_999,
 } as const;

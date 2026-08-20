@@ -21,7 +21,9 @@ import {
   TRANSICIONES_PEDIDO,
   ZONA_HORARIA,
   puedeTransicionarPedido,
+  type Category,
   type Cents,
+  type ModoDisponibilidad,
   type DeliveryZone,
   type FulfillmentType,
   type IsoDate,
@@ -31,6 +33,7 @@ import {
   type OrderDraft,
   type OrderItem,
   type OrderItemOption,
+  type OrderItem as OrderItemTipo,
   type Product,
   type ProductAvailability,
   type ProductOption,
@@ -189,14 +192,48 @@ export function disponibleAhora(
   );
 }
 
-/** ¿El producto se puede pedir? Junta las tres capas de disponibilidad. */
+/**
+ * Categorías que HABILITAN la compra: activas y sin archivar.
+ *
+ * Se devuelve un `Set` —o `null` cuando no hay lista que consultar— para que
+ * quien recorra un catálogo entero no haga una búsqueda lineal por producto.
+ * `null` significa "no verifiques la categoría", que es lo que necesita quien
+ * ya recibió los productos filtrados.
+ */
+export function idsDeCategoriasComprables(
+  categorias: readonly Pick<Category, "id" | "active" | "archived">[] | undefined
+): ReadonlySet<string> | null {
+  if (!categorias) return null;
+  return new Set(
+    categorias.filter((c) => c.active && !c.archived).map((c) => c.id)
+  );
+}
+
+/**
+ * ¿La categoría del producto lo deja comprable?
+ *
+ * Un producto activo dentro de una categoría apagada NO se puede pedir: la
+ * carta no lo muestra y ofrecerlo igual desde un carrito viejo sería vender
+ * algo que el local sacó del menú.
+ */
+function categoriaHabilita(
+  producto: Pick<Product, "categoryId">,
+  comprables: ReadonlySet<string> | null
+): boolean {
+  return comprables === null || comprables.has(producto.categoryId);
+}
+
+/** ¿El producto se puede pedir? Junta todas las capas de disponibilidad. */
 export function productoPedible(
   producto: Product,
   ahora: Date = new Date(),
-  zona: string = ZONA_HORARIA
+  zona: string = ZONA_HORARIA,
+  categoriasComprables: ReadonlySet<string> | null = null
 ): boolean {
   return (
+    !producto.archived &&
     producto.active &&
+    categoriaHabilita(producto, categoriasComprables) &&
     !producto.soldOut &&
     (producto.stockQuantity === null || producto.stockQuantity > 0) &&
     disponibleAhora(producto.availability, ahora, zona)
@@ -242,7 +279,8 @@ function calcularLinea(
   optionIds: string[],
   notas: string | undefined,
   ahora: Date,
-  zona: string
+  zona: string,
+  comprables: ReadonlySet<string> | null
 ): Omit<OrderItem, "id"> {
   const opciones: OrderItemOption[] = [];
   const porGrupo = new Map<string, number>();
@@ -256,7 +294,7 @@ function calcularLinea(
         { productId: producto.id, optionId }
       );
     }
-    if (!encontrada.opcion.available) {
+    if (!encontrada.opcion.available || !encontrada.grupo.active) {
       throw new EcommerceError(
         "ITEM_UNAVAILABLE",
         `${encontrada.opcion.name} no está disponible.`,
@@ -275,6 +313,9 @@ function calcularLinea(
   /* Los mínimos y máximos se validan por grupo: una variante obligatoria sin
      elegir es un pedido incompleto, no un pedido barato. */
   for (const grupo of producto.optionGroups) {
+    /* Un grupo apagado no exige nada: su mínimo dejaría el producto invendible
+       sin que nadie pueda cumplirlo, porque sus opciones ya no se ofrecen. */
+    if (!grupo.active) continue;
     const elegidas = porGrupo.get(grupo.id) ?? 0;
     if (elegidas < grupo.minSelect || elegidas > grupo.maxSelect) {
       throw new EcommerceError(
@@ -285,7 +326,7 @@ function calcularLinea(
     }
   }
 
-  if (!productoPedible(producto, ahora, zona)) {
+  if (!productoPedible(producto, ahora, zona, comprables)) {
     throw new EcommerceError(
       "ITEM_UNAVAILABLE",
       `${producto.name} no está disponible.`,
@@ -318,6 +359,12 @@ export interface ContextoCalculo {
   products: Product[];
   zones: DeliveryZone[];
   settings: RestaurantOperationalSettings;
+  /**
+   * Opcional: sin ella no se verifica la categoría. Se pasa siempre desde el
+   * proveedor —que tiene el catálogo entero— para que apagar una categoría
+   * también corte la venta de lo que hay adentro.
+   */
+  categories?: readonly Category[];
   ahora?: Date;
 }
 
@@ -355,6 +402,7 @@ export function calcularPedido(
   }
 
   const porId = new Map(ctx.products.map((p) => [p.id, p]));
+  const comprables = idsDeCategoriasComprables(ctx.categories);
   const items = draft.items.map((item) => {
     if (
       !Number.isInteger(item.quantity) ||
@@ -380,7 +428,8 @@ export function calcularPedido(
       item.optionIds,
       item.notes,
       ahora,
-      zona
+      zona,
+      comprables
     );
   });
 
@@ -489,6 +538,8 @@ export function resumenImportes(
 
 export type MotivoLinea =
   | "NOT_FOUND"
+  | "ARCHIVED"
+  | "CATEGORY_INACTIVE"
   | "INACTIVE"
   | "SOLD_OUT"
   | "OUT_OF_STOCK"
@@ -531,9 +582,15 @@ function motivoDe(
   producto: Product,
   cantidad: number,
   ahora: Date,
-  zona: string
+  zona: string,
+  comprables: ReadonlySet<string> | null
 ): MotivoLinea | undefined {
   if (producto.priceCents <= 0) return "INVALID_PRICE";
+  /* Archivado y "categoría apagada" se distinguen del simple `active: false`
+     porque la línea del carrito los cuenta distinto: uno es "ya no existe",
+     el otro es "hoy no". Los dos dejan de sumar, pero no dicen lo mismo. */
+  if (producto.archived) return "ARCHIVED";
+  if (!categoriaHabilita(producto, comprables)) return "CATEGORY_INACTIVE";
   if (!producto.active) return "INACTIVE";
   if (producto.soldOut) return "SOLD_OUT";
   if (producto.stockQuantity !== null && producto.stockQuantity < cantidad) {
@@ -547,9 +604,11 @@ export function resolverCarrito(
   lineas: readonly LineaCarrito[],
   productos: readonly Product[],
   ahora: Date = new Date(),
-  zona: string = ZONA_HORARIA
+  zona: string = ZONA_HORARIA,
+  categorias?: readonly Pick<Category, "id" | "active" | "archived">[]
 ): CarritoResuelto {
   const porId = new Map(productos.map((p) => [p.id, p]));
+  const comprables = idsDeCategoriasComprables(categorias);
 
   const resueltas = lineas.map<LineaResuelta>((linea) => {
     const producto = porId.get(linea.productId);
@@ -581,7 +640,7 @@ export function resolverCarrito(
     let opcionesRotas = false;
     for (const optionId of linea.optionIds) {
       const encontrada = grupoDeOpcion(producto, optionId);
-      if (!encontrada || !encontrada.opcion.available) {
+      if (!encontrada || !encontrada.opcion.available || !encontrada.grupo.active) {
         opcionesRotas = true;
         continue;
       }
@@ -593,9 +652,12 @@ export function resolverCarrito(
       });
     }
 
-    const motivo = opcionesRotas
-      ? "OPTIONS_CHANGED"
-      : motivoDe(producto, linea.quantity, ahora, zona);
+    /* El estado del PRODUCTO manda sobre el de sus opciones: si el producto se
+       archivó, decir "cambiaron las opciones" sería contar la mitad menos
+       importante de lo que pasó. */
+    const motivo =
+      motivoDe(producto, linea.quantity, ahora, zona, comprables) ??
+      (opcionesRotas ? "OPTIONS_CHANGED" : undefined);
     const unitario = precioUnitario(producto, opciones);
     const precioValido = producto.priceCents > 0;
 
@@ -729,4 +791,472 @@ export function ordenarParaPanel<T extends { status: OrderStatus; createdAt: Iso
   return grupo === "completados"
     ? copia.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : copia.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/* ===========================================================================
+ * ADMINISTRACIÓN DEL CATÁLOGO
+ *
+ * Todo lo que el panel necesita decidir ANTES de escribir vive acá: qué es un
+ * precio válido, cuándo un slug choca, cómo se traduce "agotado" a los campos
+ * de la base, cuánto stock hay que descontar y cuándo.
+ *
+ * Está en el dominio y no en los componentes por la misma razón de siempre: un
+ * `POST` hecho a mano, otra pantalla o el proveedor de Supabase tienen que
+ * chocar contra la MISMA regla que el formulario. Una validación que solo vive
+ * en el JSX no es una regla del negocio: es una sugerencia.
+ * ======================================================================== */
+
+/** Errores por campo: `{ name: "Poné un nombre." }`. Vacío = válido. */
+export type ErroresDeCampo = Record<string, string>;
+
+/* ---------------------------------------------------------------------------
+ * Disponibilidad como un solo modo
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Los dos campos de la base leídos como UNA pregunta.
+ *
+ * `sold_out` gana: es el interruptor manual, la decisión explícita de alguien
+ * que dijo "esto hoy no sale". Un producto con stock en cero NO es `sold_out`
+ * sino `limited` sin unidades —sigue llevando la cuenta— y la tienda igual lo
+ * muestra como no disponible.
+ */
+export function modoDisponibilidad(
+  producto: Pick<Product, "soldOut" | "stockQuantity">
+): ModoDisponibilidad {
+  if (producto.soldOut) return "sold_out";
+  return producto.stockQuantity !== null ? "limited" : "available";
+}
+
+/**
+ * El modo elegido en el panel traducido a los campos de la base. Es la ÚNICA
+ * traducción: ninguna pantalla escribe `soldOut` a mano.
+ */
+export function camposDeModo(
+  modo: ModoDisponibilidad,
+  cantidad?: number | null
+): { soldOut: boolean; stockQuantity: number | null } {
+  /* Marcar agotado APAGA el control de stock: dejar una cuenta viva detrás de
+     un "no hay" es tener dos verdades sobre la misma pregunta. Volver a
+     "cantidad limitada" pide el número de nuevo, que es lo honesto. */
+  if (modo === "sold_out") return { soldOut: true, stockQuantity: null };
+  if (modo === "limited") {
+    const n = Math.trunc(Number(cantidad ?? 0));
+    return {
+      soldOut: false,
+      stockQuantity: Number.isFinite(n) ? Math.max(0, n) : 0,
+    };
+  }
+  return { soldOut: false, stockQuantity: null };
+}
+
+/* ---------------------------------------------------------------------------
+ * Stock: descontar una vez, reponer una vez
+ *
+ * El descuento ocurre cuando el local ACEPTA el pedido, no cuando el cliente lo
+ * manda: hasta ese momento el local no se comprometió a nada, y reservar
+ * unidades por pedidos que después se rechazan deja la carta agotada de mentira.
+ *
+ * `Order.stockApplied` es el pestillo que hace que las dos operaciones sean
+ * idempotentes. Estas funciones son puras —reciben productos, devuelven
+ * productos— justamente para que el pestillo lo maneje quien escribe.
+ * ------------------------------------------------------------------------ */
+
+/** Unidades por producto dentro de un pedido, sumando líneas repetidas. */
+function consumoPorProducto(
+  items: readonly Pick<OrderItemTipo, "productId" | "quantity">[]
+): Map<string, number> {
+  const consumo = new Map<string, number>();
+  for (const item of items) {
+    consumo.set(item.productId, (consumo.get(item.productId) ?? 0) + item.quantity);
+  }
+  return consumo;
+}
+
+export interface FaltanteDeStock {
+  productId: string;
+  nombre: string;
+  pedido: number;
+  disponible: number;
+}
+
+/**
+ * Qué falta para poder aceptar el pedido. Devuelve la lista completa —no el
+ * primero— porque al operador hay que decirle TODO lo que le falta, no
+ * mandarlo a descubrirlo de a un producto por vez.
+ *
+ * Un producto que ya no está en el catálogo no cuenta como faltante: el pedido
+ * guarda su copia y el local puede cumplirlo igual; lo que no se puede es
+ * descontarle stock a algo que no existe.
+ */
+export function faltantesDeStock(
+  items: readonly Pick<OrderItemTipo, "productId" | "productName" | "quantity">[],
+  productos: readonly Product[]
+): FaltanteDeStock[] {
+  const porId = new Map(productos.map((p) => [p.id, p]));
+  const faltantes: FaltanteDeStock[] = [];
+  for (const [productId, pedido] of consumoPorProducto(items)) {
+    const producto = porId.get(productId);
+    if (!producto || producto.stockQuantity === null) continue;
+    if (producto.stockQuantity < pedido) {
+      faltantes.push({
+        productId,
+        nombre: producto.name,
+        pedido,
+        disponible: producto.stockQuantity,
+      });
+    }
+  }
+  return faltantes;
+}
+
+/** Descuenta las unidades del pedido. Nunca baja de cero. */
+export function descontarStock(
+  productos: readonly Product[],
+  items: readonly Pick<OrderItemTipo, "productId" | "quantity">[]
+): Product[] {
+  const consumo = consumoPorProducto(items);
+  return productos.map((p) => {
+    const cantidad = consumo.get(p.id);
+    if (!cantidad || p.stockQuantity === null) return p;
+    /* No se toca `soldOut`: un stock en cero YA muestra agotado en la tienda, y
+       encender el interruptor manual además dejaría el producto bloqueado
+       cuando el dueño reponga unidades. */
+    return { ...p, stockQuantity: Math.max(0, p.stockQuantity - cantidad) };
+  });
+}
+
+/** Repone las unidades de un pedido que se cayó DESPUÉS de haberse descontado. */
+export function reponerStock(
+  productos: readonly Product[],
+  items: readonly Pick<OrderItemTipo, "productId" | "quantity">[]
+): Product[] {
+  const consumo = consumoPorProducto(items);
+  return productos.map((p) => {
+    const cantidad = consumo.get(p.id);
+    if (!cantidad || p.stockQuantity === null) return p;
+    return { ...p, stockQuantity: p.stockQuantity + cantidad };
+  });
+}
+
+/* ---------------------------------------------------------------------------
+ * Rutas de imagen
+ *
+ * En modo demo NO hay almacenamiento: no se sube nada, se apunta a un asset que
+ * ya existe. Lo único que se valida es la forma de la ruta.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Dominios externos que `next/image` puede servir HOY.
+ *
+ * Es el espejo de `images.remotePatterns` en `web/next.config.ts`, que está
+ * vacío a propósito: abrir el allowlist para que una demo pueda pegar un enlace
+ * cualquiera convierte al sitio en proxy de imágenes de terceros. Si algún día
+ * se habilita un dominio, se agrega en los dos lados.
+ */
+export const DOMINIOS_IMAGEN_PERMITIDOS: readonly string[] = [];
+
+/**
+ * Valida la ruta de una imagen. Devuelve el mensaje de error o `null` si sirve.
+ * Una cadena vacía es válida: quitar la imagen es una decisión legítima.
+ */
+export function validarRutaImagen(ruta: string | undefined): string | null {
+  const valor = (ruta ?? "").trim();
+  if (!valor) return null;
+  if (valor.startsWith("/")) {
+    return valor.includes("..")
+      ? "La ruta no puede salir de la carpeta pública."
+      : null;
+  }
+  if (/^https:\/\//i.test(valor)) {
+    let host = "";
+    try {
+      host = new URL(valor).hostname;
+    } catch {
+      return "Esa dirección no es válida.";
+    }
+    return DOMINIOS_IMAGEN_PERMITIDOS.includes(host)
+      ? null
+      : "Esta demo todavía no puede mostrar imágenes de otros sitios. Usá una ruta que empiece con “/”.";
+  }
+  return "Usá una ruta que empiece con “/” (por ejemplo /hamburgueseria/platos/clasica.png).";
+}
+
+/* ---------------------------------------------------------------------------
+ * Validación de categorías
+ * ------------------------------------------------------------------------ */
+
+export interface EntradaCategoria {
+  name: string;
+  slug: string;
+}
+
+export function validarCategoria(
+  entrada: EntradaCategoria,
+  ctx: { categorias: readonly Category[]; idActual?: string }
+): ErroresDeCampo {
+  const errores: ErroresDeCampo = {};
+  const name = entrada.name.trim();
+  const slug = entrada.slug.trim();
+
+  if (!name) errores.name = "Poné un nombre.";
+  else if (name.length > LIMITES.largoNombre) {
+    errores.name = `Máximo ${LIMITES.largoNombre} caracteres.`;
+  }
+
+  if (!slug) errores.slug = "Poné una dirección.";
+  else if (slug !== aSlug(slug)) {
+    errores.slug = "Usá solo minúsculas, números y guiones.";
+  } else if (
+    ctx.categorias.some((c) => c.id !== ctx.idActual && c.slug === slug)
+  ) {
+    errores.slug = "Ya hay otra categoría con esa dirección.";
+  }
+
+  return errores;
+}
+
+/**
+ * ¿Se puede archivar la categoría?
+ *
+ * NO se borra ni se archiva una categoría que todavía tiene productos vivos: el
+ * producto quedaría colgando de un padre invisible, ni en la carta ni en el
+ * panel. Primero se mueven o se archivan los productos; recién ahí la categoría
+ * se puede guardar.
+ */
+export function productosVivosDeCategoria(
+  categoryId: string,
+  productos: readonly Product[]
+): Product[] {
+  return productos.filter((p) => p.categoryId === categoryId && !p.archived);
+}
+
+/* ---------------------------------------------------------------------------
+ * Validación de productos
+ * ------------------------------------------------------------------------ */
+
+export interface EntradaProducto {
+  name: string;
+  slug: string;
+  categoryId: string;
+  description?: string;
+  /** Ya en centésimos: la conversión desde pesos la hace `parsearPesos`. */
+  priceCents: number | null;
+  active: boolean;
+  modo: ModoDisponibilidad;
+  stockQuantity?: number | null;
+  imageUrl?: string;
+  stageImageUrl?: string;
+}
+
+export function validarProducto(
+  entrada: EntradaProducto,
+  ctx: {
+    productos: readonly Product[];
+    categorias: readonly Category[];
+    idActual?: string;
+  }
+): ErroresDeCampo {
+  const errores: ErroresDeCampo = {};
+  const name = entrada.name.trim();
+  const slug = entrada.slug.trim();
+
+  if (!name) errores.name = "Poné un nombre.";
+  else if (name.length > LIMITES.largoNombre) {
+    errores.name = `Máximo ${LIMITES.largoNombre} caracteres.`;
+  }
+
+  if (!slug) errores.slug = "Poné una dirección.";
+  else if (slug !== aSlug(slug)) {
+    errores.slug = "Usá solo minúsculas, números y guiones.";
+  } else if (
+    ctx.productos.some((p) => p.id !== ctx.idActual && p.slug === slug)
+  ) {
+    errores.slug = "Ya hay otro producto con esa dirección.";
+  }
+
+  if (!entrada.categoryId) errores.categoryId = "Elegí una categoría.";
+  else if (!ctx.categorias.some((c) => c.id === entrada.categoryId)) {
+    errores.categoryId = "Esa categoría ya no existe.";
+  }
+
+  if ((entrada.description?.trim().length ?? 0) > LIMITES.largoDescripcion) {
+    errores.description = `Máximo ${LIMITES.largoDescripcion} caracteres.`;
+  }
+
+  /* El precio: `null` es "no se entendió lo que se escribió". Un producto
+     apagado puede quedar sin precio —es un borrador—, pero uno publicado no:
+     ahí el precio es la promesa que el cliente ve. */
+  if (entrada.priceCents === null) {
+    errores.priceCents = "Escribí el precio en pesos, por ejemplo 490.";
+  } else if (entrada.priceCents < 0) {
+    errores.priceCents = "El precio no puede ser negativo.";
+  } else if (entrada.priceCents > LIMITES.precioMaximoCents) {
+    errores.priceCents = "Ese precio parece un error de tipeo.";
+  } else if (entrada.active && entrada.priceCents <= 0) {
+    errores.priceCents = "Un producto publicado necesita un precio.";
+  }
+
+  if (entrada.modo === "limited") {
+    const n = entrada.stockQuantity;
+    if (n === null || n === undefined || !Number.isInteger(n) || n < 0) {
+      errores.stockQuantity = "Poné una cantidad entera, 0 o más.";
+    } else if (n > LIMITES.stockMaximo) {
+      errores.stockQuantity = `Máximo ${LIMITES.stockMaximo} unidades.`;
+    }
+  }
+
+  const imagen = validarRutaImagen(entrada.imageUrl);
+  if (imagen) errores.imageUrl = imagen;
+  const escena = validarRutaImagen(entrada.stageImageUrl);
+  if (escena) errores.stageImageUrl = escena;
+
+  return errores;
+}
+
+/* ---------------------------------------------------------------------------
+ * Grupos de opciones
+ *
+ * "Variante" y "extra" son el mismo objeto con otra configuración (ver
+ * `types.ts`). El panel muestra un tipo y un interruptor de obligatoriedad; acá
+ * se traduce a los mínimos y máximos reales, y al revés.
+ * ------------------------------------------------------------------------ */
+
+export type TipoDeGrupo = "unica" | "multiple";
+
+export function tipoDeGrupo(
+  grupo: Pick<ProductOptionGroup, "maxSelect">
+): TipoDeGrupo {
+  return grupo.maxSelect <= 1 ? "unica" : "multiple";
+}
+
+/**
+ * Tipo + obligatoriedad → mínimo y máximo coherentes.
+ *
+ * Selección única implica máximo 1; obligatoria implica mínimo 1. Se calcula en
+ * vez de dejar que el formulario guarde una combinación imposible como
+ * "elegí entre 2 y 1".
+ */
+export function camposDeGrupo(
+  tipo: TipoDeGrupo,
+  obligatorio: boolean,
+  min = 0,
+  max = 1
+): { minSelect: number; maxSelect: number } {
+  if (tipo === "unica") return { minSelect: obligatorio ? 1 : 0, maxSelect: 1 };
+  const maxSelect = Math.max(1, Math.trunc(max));
+  const pedido = Math.max(obligatorio ? 1 : 0, Math.trunc(min));
+  return { minSelect: Math.min(pedido, maxSelect), maxSelect };
+}
+
+/**
+ * Valida los grupos de un producto. Las claves de error se indexan por posición
+ * (`grupo.0.name`, `grupo.0.opcion.2.name`) para que el formulario pueda pintar
+ * cada mensaje al lado de su campo sin inventar identificadores.
+ */
+export function validarGruposDeOpciones(
+  grupos: readonly ProductOptionGroup[]
+): ErroresDeCampo {
+  const errores: ErroresDeCampo = {};
+  if (grupos.length > LIMITES.gruposPorProducto) {
+    errores.optionGroups = `Máximo ${LIMITES.gruposPorProducto} grupos.`;
+  }
+
+  grupos.forEach((grupo, i) => {
+    if (!grupo.name.trim()) errores[`grupo.${i}.name`] = "Poné un nombre.";
+    if (grupo.options.length > LIMITES.opcionesPorGrupo) {
+      errores[`grupo.${i}.options`] = `Máximo ${LIMITES.opcionesPorGrupo} opciones.`;
+    }
+
+    const activas = grupo.options.filter((o) => o.available);
+    /* Un grupo encendido y obligatorio sin opciones disponibles bloquea la
+       venta del producto entero: nadie puede cumplir el mínimo. */
+    if (grupo.active && grupo.minSelect > activas.length) {
+      errores[`grupo.${i}.options`] =
+        activas.length === 0
+          ? "Un grupo obligatorio necesita al menos una opción disponible."
+          : `No alcanzan las opciones disponibles para exigir ${grupo.minSelect}.`;
+    }
+
+    grupo.options.forEach((opcion, j) => {
+      if (!opcion.name.trim()) {
+        errores[`grupo.${i}.opcion.${j}.name`] = "Poné un nombre.";
+      }
+      if (!Number.isInteger(opcion.priceDeltaCents)) {
+        errores[`grupo.${i}.opcion.${j}.priceDeltaCents`] =
+          "Escribí un importe válido.";
+      } else if (Math.abs(opcion.priceDeltaCents) > LIMITES.precioMaximoCents) {
+        errores[`grupo.${i}.opcion.${j}.priceDeltaCents`] =
+          "Ese importe parece un error de tipeo.";
+      }
+    });
+  });
+
+  return errores;
+}
+
+/* ---------------------------------------------------------------------------
+ * Zonas de delivery
+ * ------------------------------------------------------------------------ */
+
+export interface EntradaZona {
+  name: string;
+  feeCents: number | null;
+  minOrderCents: number | null;
+}
+
+export function validarZona(
+  entrada: EntradaZona,
+  ctx: { zonas: readonly DeliveryZone[]; idActual?: string }
+): ErroresDeCampo {
+  const errores: ErroresDeCampo = {};
+  const name = entrada.name.trim();
+
+  if (!name) errores.name = "Poné un nombre.";
+  else if (name.length > LIMITES.largoNombre) {
+    errores.name = `Máximo ${LIMITES.largoNombre} caracteres.`;
+  } else if (
+    ctx.zonas.some(
+      (z) =>
+        z.id !== ctx.idActual &&
+        !z.archived &&
+        z.name.trim().toLowerCase() === name.toLowerCase()
+    )
+  ) {
+    errores.name = "Ya hay una zona con ese nombre.";
+  }
+
+  if (entrada.feeCents === null) {
+    errores.feeCents = "Escribí el costo en pesos, por ejemplo 120.";
+  } else if (entrada.feeCents < 0) {
+    errores.feeCents = "El costo no puede ser negativo.";
+  } else if (entrada.feeCents > LIMITES.precioMaximoCents) {
+    errores.feeCents = "Ese costo parece un error de tipeo.";
+  }
+
+  if (entrada.minOrderCents === null) {
+    errores.minOrderCents = "Escribí el mínimo en pesos, o 0 si no hay.";
+  } else if (entrada.minOrderCents < 0) {
+    errores.minOrderCents = "El mínimo no puede ser negativo.";
+  } else if (entrada.minOrderCents > LIMITES.precioMaximoCents) {
+    errores.minOrderCents = "Ese mínimo parece un error de tipeo.";
+  }
+
+  return errores;
+}
+
+/**
+ * ¿El delivery se puede ofrecer?
+ *
+ * Habilitado en la configuración NO alcanza: sin una zona activa no hay tarifa
+ * que cobrar ni lugar a donde ir. Es la misma pregunta en el panel, en el
+ * checkout y en el proveedor, así que se contesta una sola vez.
+ */
+export function deliveryDisponible(
+  settings: Pick<RestaurantOperationalSettings, "deliveryEnabled">,
+  zonas: readonly DeliveryZone[]
+): boolean {
+  return (
+    settings.deliveryEnabled && zonas.some((z) => z.active && !z.archived)
+  );
 }

@@ -88,3 +88,67 @@ export function parsearPrecioLegado(texto: string | undefined): Cents | null {
   const decimales = match[2] ? match[2].padEnd(2, "0") : "00";
   return entero * 100 + Number(decimales);
 }
+
+/* ---------------------------------------------------------------------------
+ * Entrada de precios en el panel
+ *
+ * El dueño escribe PESOS (`490`), la base guarda CENTÉSIMOS (`49000`). La
+ * conversión vive acá y en ningún otro lado: en cuanto un componente la hace a
+ * mano, aparece el producto que salió cien veces más caro.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Convierte lo que se tipeó en un campo de precio a centésimos.
+ *
+ * Acepta:  "490"  " 490 "  "490,50"  "490.5"  "0"
+ * Rechaza: "1.250" (¿mil doscientos cincuenta o un peso con veinticinco?),
+ *          "-5", "490 pesos", "", "1e3"
+ *
+ * Es ESTRICTO a propósito. Un parser tolerante en un formulario de precios
+ * convierte un error de tipeo en una venta a precio equivocado, y el negocio se
+ * entera cuando ya cocinó.
+ */
+export function parsearPesos(texto: string): Cents | null {
+  const limpio = texto.trim().replace(/\s+/g, "");
+  if (!limpio) return null;
+  /* Un único separador seguido de UNO o DOS dígitos son decimales. Tres
+     dígitos detrás del punto es notación de miles y no se adivina. */
+  const match = /^(\d{1,7})(?:[.,](\d{1,2}))?$/.exec(limpio);
+  if (!match) return null;
+  const entero = Number(match[1]);
+  if (!Number.isSafeInteger(entero)) return null;
+  const decimales = match[2] ? match[2].padEnd(2, "0") : "00";
+  return entero * 100 + Number(decimales);
+}
+
+/**
+ * Centésimos → lo que se muestra dentro de un `<input>`: sin símbolo, sin
+ * separador de miles y sin decimales cuando son cero. Es la inversa exacta de
+ * `parsearPesos`, para que abrir un producto y guardarlo sin tocar nada no le
+ * cambie el precio.
+ */
+export function formatearPesos(cents: Cents): string {
+  if (!Number.isFinite(cents)) return "";
+  const enteros = Math.trunc(cents / 100);
+  const resto = Math.abs(cents % 100);
+  return resto === 0
+    ? String(enteros)
+    : `${enteros},${String(resto).padStart(2, "0")}`;
+}
+
+/**
+ * Igual que `parsearPesos` pero admite un signo delante.
+ *
+ * Existe por un caso concreto: el incremento de una opción puede RESTAR ("sin
+ * queso, −20"). Un campo vacío vale 0, porque la mayoría de las opciones no
+ * cambian el precio y obligar a escribir "0" en cada una es maltrato.
+ */
+export function parsearPesosConSigno(texto: string): Cents | null {
+  const limpio = texto.trim();
+  if (!limpio) return 0;
+  const negativo = limpio.startsWith("-") || limpio.startsWith("−");
+  const cuerpo = negativo ? limpio.slice(1) : limpio;
+  const cents = parsearPesos(cuerpo);
+  if (cents === null) return null;
+  return negativo ? -cents : cents;
+}

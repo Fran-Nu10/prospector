@@ -54,8 +54,18 @@ export type NewProductInput = Pick<
     >
   >;
 
-/** Edición parcial. `id`, `createdAt` y `slug` no se tocan desde acá. */
-export type ProductPatch = Partial<Omit<Product, "id" | "slug" | "createdAt">>;
+/**
+ * Edición parcial. `id` y `createdAt` son inmutables; el `slug` SÍ se puede
+ * cambiar —el dueño necesita corregir una dirección mal escrita— y por eso el
+ * proveedor revalida su unicidad en cada escritura.
+ */
+export type ProductPatch = Partial<Omit<Product, "id" | "createdAt">>;
+
+/** Alta de categoría. El slug se deriva del nombre si no viene. */
+export type NewCategoryInput = Pick<Category, "name"> &
+  Partial<Pick<Category, "slug" | "active" | "position">>;
+
+export type CategoryPatch = Partial<Omit<Category, "id">>;
 
 /** Los tres interruptores de disponibilidad, cada uno opcional. */
 export interface AvailabilityPatch {
@@ -65,22 +75,43 @@ export interface AvailabilityPatch {
   availability?: ProductAvailability[];
 }
 
-export interface ListProductsOptions {
+export interface ListCatalogOptions {
   /** Por defecto `false`: lo público solo ve el catálogo activo. */
   includeInactive?: boolean;
+  /**
+   * Por defecto `false`. Lo archivado solo lo pide quien tiene que mostrarlo
+   * como archivado —el panel— o quien necesita degradar una línea de carrito
+   * con el nombre correcto.
+   */
+  includeArchived?: boolean;
+}
+
+export interface ListProductsOptions extends ListCatalogOptions {
   categoryId?: string;
 }
 
 export interface CatalogRepository {
-  listCategories(options?: { includeInactive?: boolean }): Promise<Category[]>;
+  listCategories(options?: ListCatalogOptions): Promise<Category[]>;
   listProducts(options?: ListProductsOptions): Promise<Product[]>;
   /** Por `id` o por `slug`; devuelve `null` si no existe. */
   getProduct(ref: { id?: string; slug?: string }): Promise<Product | null>;
   createProduct(input: NewProductInput): Promise<Product>;
   updateProduct(id: string, patch: ProductPatch): Promise<Product>;
+  /**
+   * Copia un producto con otro nombre y otra dirección, INACTIVO.
+   *
+   * Duplicar es la forma real de dar de alta la cuarta hamburguesa de la carta,
+   * y entra apagada porque una copia publicada sin revisar es el mismo producto
+   * dos veces en la vitrina.
+   */
+  duplicateProduct(id: string): Promise<Product>;
   setAvailability(id: string, patch: AvailabilityPatch): Promise<Product>;
   /** Reordena dentro de una categoría. Los ids ausentes quedan al final. */
   reorderProducts(categoryId: string, orderedIds: string[]): Promise<void>;
+  createCategory(input: NewCategoryInput): Promise<Category>;
+  updateCategory(id: string, patch: CategoryPatch): Promise<Category>;
+  /** Reordena la carta entera. Los ids ausentes quedan al final. */
+  reorderCategories(orderedIds: string[]): Promise<void>;
 }
 
 /* ---------------------------------------------------------------------------
@@ -100,8 +131,11 @@ export interface SettingsRepository {
   updateSettings(patch: SettingsPatch): Promise<RestaurantOperationalSettings>;
   listDeliveryZones(options?: {
     includeInactive?: boolean;
+    includeArchived?: boolean;
   }): Promise<DeliveryZone[]>;
   upsertDeliveryZone(zone: DeliveryZoneInput): Promise<DeliveryZone>;
+  /** Reordena las zonas. Los ids ausentes quedan al final. */
+  reorderDeliveryZones(orderedIds: string[]): Promise<void>;
 }
 
 /* ---------------------------------------------------------------------------

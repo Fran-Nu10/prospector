@@ -103,6 +103,7 @@ export function construirSeed(
       name: seccion.title,
       position: iCat,
       active: true,
+      archived: false,
     };
     categories.push(categoria);
 
@@ -140,6 +141,7 @@ export function construirSeed(
            catálogo arranca sin ninguno. */
         optionGroups: [],
         availability: [],
+        archived: false,
         createdAt: creado,
         updatedAt: creado,
       });
@@ -166,7 +168,11 @@ export function construirSeed(
 
   return {
     db: {
-      version: 1,
+      /* Literal y no una constante importada: `database.ts` ya importa este
+         archivo, y cerrar el círculo rompía el bundle en producción. El tipo de
+         `DemoDatabase["version"]` es el literal de la base, así que subirla allá
+         hace fallar esta línea en compilación en vez de en silencio. */
+      version: 2,
       categories,
       products,
       deliveryZones: [],

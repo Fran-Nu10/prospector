@@ -24,6 +24,10 @@ const TEXTOS: Record<MotivoNoComprable | MotivoLinea, string> = {
   OUT_OF_STOCK: "Sin stock",
   OUT_OF_HOURS: "Fuera de horario",
   NOT_FOUND: "Ya no está en la carta",
+  ARCHIVED: "Ya no está en la carta",
+  /* Al comprador no le importa que la culpa sea de la categoría: para él es
+     una cosa que hoy no se puede pedir. El código distingue, el texto no. */
+  CATEGORY_INACTIVE: "No disponible",
   OPTIONS_CHANGED: "Cambiaron las opciones",
 };
 

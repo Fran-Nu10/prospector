@@ -36,7 +36,7 @@ import type {
 import { SLUG_INSTALACION, seedPorDefecto } from "./seed";
 
 export interface DemoDatabase {
-  version: 1;
+  version: typeof VERSION;
   categories: Category[];
   products: Product[];
   deliveryZones: DeliveryZone[];
@@ -44,8 +44,14 @@ export interface DemoDatabase {
   orders: Order[];
 }
 
-/** Subir esto invalida lo guardado y vuelve al seed. */
-const VERSION = 1 as const;
+/**
+ * Subir esto invalida lo guardado y vuelve al seed.
+ *
+ * v2 (fase 5): categorías, productos y zonas suman `archived`; el pedido suma
+ * `stockApplied`. Una base v1 no tiene esos campos y migrarla a mano por un
+ * almacenamiento de demostración no vale la pena: se regenera.
+ */
+const VERSION = 2 as const;
 
 /**
  * Clave con espacio de nombres por instalación: dos demos abiertas en el mismo
