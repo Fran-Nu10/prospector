@@ -1,0 +1,43 @@
+{
+  "lienzo": 1600,
+  "lineaBase": 0.875,
+  "ladoPercibido": 1030,
+  "altoVisibleMax": 0.58,
+  "productos": {
+    "bacon-fest": {
+      "x": 0.1525,
+      "y": 0.295,
+      "ancho": 0.6913,
+      "alto": 0.58,
+      "escala": 0.8872
+    },
+    "clasica": {
+      "x": 0.1669,
+      "y": 0.295,
+      "ancho": 0.6613,
+      "alto": 0.58,
+      "escala": 0.8863
+    },
+    "doble-doble": {
+      "x": 0.1731,
+      "y": 0.295,
+      "ancho": 0.6375,
+      "alto": 0.58,
+      "escala": 0.8577
+    },
+    "oklahoma": {
+      "x": 0.1119,
+      "y": 0.3362,
+      "ancho": 0.7688,
+      "alto": 0.5387,
+      "escala": 1.0
+    },
+    "verde": {
+      "x": 0.1762,
+      "y": 0.295,
+      "ancho": 0.6412,
+      "alto": 0.58,
+      "escala": 0.8398
+    }
+  }
+}

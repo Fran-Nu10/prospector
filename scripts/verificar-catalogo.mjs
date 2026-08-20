@@ -770,6 +770,107 @@ seccion("Zonas de delivery y configuración");
   });
 }
 
+/* --- 13 bis. Migración de una base ya guardada ----------------------------- */
+
+seccion("Migración no destructiva (v2 → v3)");
+{
+  const { seedPorDefecto } = require_(MOD("demo/seed.js"));
+  const { migrarBase, completarImagenesDelSeed } = require_(MOD("demo/migraciones.js"));
+  const semilla = seedPorDefecto();
+
+  /* Una v2 realista: la de alguien que ya usó la demo. Tiene un pedido, un
+     precio corregido, un producto creado desde el panel y una foto cambiada a
+     mano; y le faltan las imágenes que este cambio agrega. */
+  const conImagenViejaPropia = {
+    ...semilla.products[0],
+    priceCents: 61000,
+    imageUrl: "/hamburgueseria/galeria/local-05-frente.jpg",
+  };
+  const delPanel = {
+    ...semilla.products[0],
+    id: "prod_creado_en_el_panel",
+    slug: "creado-en-el-panel",
+    name: "Creado desde el panel",
+    imageUrl: undefined,
+    stageImageUrl: undefined,
+  };
+  const sinRecorte = semilla.products.find((p) => p.name === "Bacon Fest");
+  const sinFoto = semilla.products.find((p) => p.name === "Papas de la casa");
+
+  const guardada = {
+    ...semilla,
+    version: 2,
+    products: [
+      conImagenViejaPropia,
+      { ...sinRecorte, stageImageUrl: undefined },
+      { ...sinFoto, imageUrl: undefined },
+      delPanel,
+    ],
+    deliveryZones: [
+      {
+        id: "z-guardada",
+        name: "Zona del dueño",
+        feeCents: 15000,
+        minOrderCents: 0,
+        active: true,
+        position: 0,
+        archived: false,
+      },
+    ],
+    settings: { ...semilla.settings, acceptingOrders: false, defaultPrepMinutes: 35 },
+    orders: [{ id: "pedido-viejo", orderNumber: "0007", totalCents: 123400 }],
+  };
+
+  const migrada = migrarBase(guardada);
+  ok(migrada !== null, "una base v2 guardada se puede migrar");
+  ok(migrada.version === 3, "queda en la versión nueva");
+  ok(
+    migrada.orders.length === 1 && migrada.orders[0].orderNumber === "0007",
+    "el pedido viejo sigue ahí"
+  );
+  ok(
+    migrada.deliveryZones[0].name === "Zona del dueño" &&
+      migrada.settings.acceptingOrders === false &&
+      migrada.settings.defaultPrepMinutes === 35 &&
+      migrada.categories.length === semilla.categories.length,
+    "zonas, configuración y categorías quedan intactas"
+  );
+
+  const buscar = (id) => migrada.products.find((p) => p.id === id);
+  ok(
+    buscar(conImagenViejaPropia.id).priceCents === 61000,
+    "un precio corregido a mano no se pisa"
+  );
+  ok(
+    buscar(conImagenViejaPropia.id).imageUrl ===
+      "/hamburgueseria/galeria/local-05-frente.jpg",
+    "una imagen elegida desde el panel tampoco"
+  );
+  ok(
+    buscar(sinRecorte.id).stageImageUrl === sinRecorte.stageImageUrl,
+    "al producto sin recorte se le completa el de vitrina (Bacon Fest)"
+  );
+  ok(
+    buscar(sinFoto.id).imageUrl === sinFoto.imageUrl,
+    "y al acompañamiento sin foto, la suya"
+  );
+  const creado = buscar("prod_creado_en_el_panel");
+  ok(
+    creado.imageUrl === undefined && creado.stageImageUrl === undefined,
+    "un producto creado desde el panel no recibe imágenes que nadie le puso"
+  );
+  ok(
+    migrarBase({ ...guardada, version: 1 }) === null,
+    "una versión que la migración no conoce no se da por buena"
+  );
+
+  const { completados } = completarImagenesDelSeed(semilla.products, semilla);
+  ok(
+    completados.length === 0,
+    "sobre una base ya al día, la migración no toca nada"
+  );
+}
+
 /* --- 13. Nada inventado --------------------------------------------------- */
 
 seccion("Sin datos inventados y sin Supabase");

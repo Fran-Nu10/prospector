@@ -172,7 +172,7 @@ export function construirSeed(
          archivo, y cerrar el círculo rompía el bundle en producción. El tipo de
          `DemoDatabase["version"]` es el literal de la base, así que subirla allá
          hace fallar esta línea en compilación en vez de en silencio. */
-      version: 2,
+      version: 3,
       categories,
       products,
       deliveryZones: [],
