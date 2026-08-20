@@ -241,8 +241,14 @@ export default function Checkout({
   const cargado = tienda?.cargado ?? false;
   const carrito = tienda?.carrito;
 
-  const deliveryDisponible = Boolean(ajustes?.deliveryEnabled) && zonas.length > 0;
+  /* Lo decide el dominio: habilitado NO alcanza, tiene que haber una zona
+     activa a la que ir. Misma pregunta en el panel, en el checkout y en el
+     proveedor, contestada en un solo lugar. */
+  const deliveryDisponible = tienda?.hayDelivery ?? false;
   const retiroDisponible = ajustes?.pickupEnabled !== false;
+  /* El local apagó "aceptar pedidos": la carta se sigue viendo y el checkout
+     también, pero confirmar queda bloqueado y se dice por qué. */
+  const pausada = cargado && !(tienda?.aceptandoPedidos ?? true);
 
   const zonaElegida: DeliveryZone | null =
     form.entrega === "delivery"
@@ -289,7 +295,7 @@ export default function Checkout({
   };
 
   const confirmar = async () => {
-    if (enviando) return;
+    if (enviando || pausada) return;
     setErrorGlobal(null);
 
     const nuevos = validarFormulario(form, contexto);
@@ -697,6 +703,20 @@ export default function Checkout({
                 </dl>
               </Bloque>
 
+              {pausada && (
+                <p
+                  role="status"
+                  data-tienda-pausada
+                  className="border-l-2 border-brasa pl-12 text-body-sm leading-body text-rescoldo"
+                >
+                  <strong className="text-hueso">
+                    El local no está tomando pedidos en este momento.
+                  </strong>{" "}
+                  {ajustes?.closedMessage?.trim() ||
+                    "Podés ver el menú y escribirnos por WhatsApp."}
+                </p>
+              )}
+
               {errorGlobal && (
                 <p
                   role="alert"
@@ -710,7 +730,7 @@ export default function Checkout({
                 <button
                   type="button"
                   onClick={confirmar}
-                  disabled={enviando || hayProblemas}
+                  disabled={enviando || hayProblemas || pausada}
                   aria-busy={enviando}
                   className="inline-flex min-h-[52px] items-center justify-center rounded-button bg-brasa px-32 text-body font-bold text-hueso disabled:bg-carbon disabled:text-rescoldo"
                 >

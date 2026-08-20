@@ -18,14 +18,23 @@ import {
   type SesionAdmin,
 } from "../../../web/lib/ecommerce/sesion";
 import {
+  sesionPuede,
+  type AreaPanel,
+} from "../../../web/lib/ecommerce/permisos";
+import type { EcommerceRepositories } from "../../../web/lib/ecommerce/repositories";
+import {
   obtenerEcommerce,
   suscribirEcommerce,
 } from "../../../web/lib/ecommerce/service";
 import {
   EcommerceError,
   type AdminRole,
+  type Category,
+  type DeliveryZone,
   type Order,
   type OrderStatus,
+  type Product,
+  type RestaurantOperationalSettings,
 } from "../../../web/lib/ecommerce/types";
 import { textoError } from "../ecommerce/copy";
 
@@ -66,10 +75,48 @@ export interface Panel {
     opciones?: { reason?: string; estimatedMinutes?: number }
   ): Promise<boolean>;
   cobrar(id: string): Promise<boolean>;
+  /**
+   * ¿La sesión actual entra a esta área?
+   *
+   * Es la MISMA pregunta que decide si se pinta el enlace y si la pantalla se
+   * renderiza. Ocultar el botón no es un permiso: por eso las dos cosas leen
+   * de acá y no de un `role === "owner"` suelto en el JSX.
+   */
+  puede(area: AreaPanel): boolean;
+  /** Catálogo COMPLETO —inactivos y archivados incluidos—: es el panel. */
+  catalogo: CatalogoPanel;
+  /**
+   * Ejecuta una escritura contra el proveedor, traduce el error y vuelve a
+   * leer. Es el único camino de escritura del panel: ninguna pantalla habla
+   * con el repositorio por su cuenta, así que ninguna puede olvidarse de
+   * refrescar ni de mostrar el error.
+   *
+   * Devuelve lo que devolvió la acción, o `null` si falló.
+   */
+  guardar<T>(
+    accion: (repos: EcommerceRepositories) => Promise<T>
+  ): Promise<T | null>;
   /** Último error de una acción, ya traducido. */
   error: string | null;
   limpiarError(): void;
 }
+
+export interface CatalogoPanel {
+  /** `false` hasta la primera lectura en el navegador. */
+  cargado: boolean;
+  categorias: Category[];
+  productos: Product[];
+  zonas: DeliveryZone[];
+  ajustes: RestaurantOperationalSettings | null;
+}
+
+const CATALOGO_VACIO: CatalogoPanel = {
+  cargado: false,
+  categorias: [],
+  productos: [],
+  zonas: [],
+  ajustes: null,
+};
 
 const PanelContext = createContext<Panel | null>(null);
 
@@ -89,6 +136,7 @@ export default function PanelProvider({ children }: { children: React.ReactNode 
 
   const [pedidos, setPedidos] = useState<Order[]>([]);
   const [cargado, setCargado] = useState(false);
+  const [catalogo, setCatalogo] = useState<CatalogoPanel>(CATALOGO_VACIO);
   const [error, setError] = useState<string | null>(null);
 
   const vivo = useRef(true);
@@ -100,8 +148,9 @@ export default function PanelProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const releer = useCallback(() => {
-    obtenerEcommerce()
-      .orders.list()
+    const { catalog, orders, settings } = obtenerEcommerce();
+    orders
+      .list()
       .then((lista) => {
         if (!vivo.current) return;
         setPedidos(lista);
@@ -109,6 +158,23 @@ export default function PanelProvider({ children }: { children: React.ReactNode 
       })
       .catch(() => {
         if (vivo.current) setCargado(true);
+      });
+
+    /* El panel pide TODO: lo inactivo y lo archivado también. Un catálogo
+       filtrado sería el de la tienda, y desde acá justamente hay que poder ver
+       —y devolver a la vida— lo que está apagado. */
+    Promise.all([
+      catalog.listCategories({ includeInactive: true, includeArchived: true }),
+      catalog.listProducts({ includeInactive: true, includeArchived: true }),
+      settings.listDeliveryZones({ includeInactive: true, includeArchived: true }),
+      settings.getSettings(),
+    ])
+      .then(([categorias, productos, zonas, ajustes]) => {
+        if (!vivo.current) return;
+        setCatalogo({ cargado: true, categorias, productos, zonas, ajustes });
+      })
+      .catch(() => {
+        if (vivo.current) setCatalogo((c) => ({ ...c, cargado: true }));
       });
   }, []);
 
@@ -119,6 +185,7 @@ export default function PanelProvider({ children }: { children: React.ReactNode 
     if (!sesion) {
       setPedidos([]);
       setCargado(false);
+      setCatalogo(CATALOGO_VACIO);
       return;
     }
     releer();
@@ -173,6 +240,28 @@ export default function PanelProvider({ children }: { children: React.ReactNode 
     [releer]
   );
 
+  const guardar = useCallback<Panel["guardar"]>(
+    async (accion) => {
+      setError(null);
+      try {
+        const resultado = await accion(obtenerEcommerce());
+        releer();
+        return resultado;
+      } catch (e) {
+        setError(
+          e instanceof EcommerceError
+            ? textoError(e.code, e.message)
+            : "No pudimos guardar el cambio. Probá de nuevo."
+        );
+        /* Igual se relee: si el cambio falló porque otra pestaña ya lo hizo, la
+           pantalla tiene que mostrar lo que quedó guardado, no lo que creía. */
+        releer();
+        return null;
+      }
+    },
+    [releer]
+  );
+
   const cambiarEstado = useCallback<Panel["cambiarEstado"]>(
     (id, destino, opciones) =>
       ejecutar(() =>
@@ -201,6 +290,9 @@ export default function PanelProvider({ children }: { children: React.ReactNode 
     salir: cerrarSesion,
     cambiarEstado,
     cobrar,
+    puede: (area) => sesionPuede(sesion, area),
+    catalogo,
+    guardar,
     error,
     limpiarError: () => setError(null),
   };

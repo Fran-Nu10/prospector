@@ -192,6 +192,19 @@ export default function CarritoHoja() {
         </div>
       ) : (
         <>
+          {/* Que el local esté pausado se dice ACÁ y no recién al confirmar:
+              llenar un carrito para enterarse al final es la peor forma de
+              descubrirlo. */}
+          {tienda.cargado && !tienda.aceptandoPedidos && (
+            <p className="mb-16 border-l-2 border-brasa pl-12 text-body-sm leading-body text-rescoldo">
+              <strong className="text-hueso">
+                El local no está tomando pedidos en este momento.
+              </strong>{" "}
+              {tienda.ajustes?.closedMessage?.trim() ||
+                "Podés armar tu pedido y escribirnos por WhatsApp."}
+            </p>
+          )}
+
           {carrito.hayProblemas && (
             <p className="mb-16 border-l-2 border-brasa pl-12 text-body-sm leading-body text-rescoldo">
               Hay productos que ya no se pueden pedir. Quitalos para seguir.
