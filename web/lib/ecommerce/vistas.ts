@@ -17,6 +17,7 @@ import { formatearDinero, parsearPrecioLegado } from "./money";
 import { DATOS_PROSPECTO, SLUG_INSTALACION } from "./demo/seed";
 import { obtenerEcommerce } from "./service";
 import type {
+  Category,
   Cents,
   DeliveryZone,
   Product,
@@ -29,6 +30,8 @@ import type {
 export type MotivoNoComprable =
   | "SIN_ECOMMERCE"
   | "INVALID_PRICE"
+  | "ARCHIVED"
+  | "CATEGORY_INACTIVE"
   | "INACTIVE"
   | "SOLD_OUT"
   | "OUT_OF_STOCK"
@@ -75,7 +78,12 @@ export interface SeccionVista {
 export type FuenteCatalogo =
   | {
       modo: "ecommerce";
-      categorias: { id: string; name: string }[];
+      /**
+       * Solo las que la tienda puede mostrar (activas, sin archivar). Viajan
+       * completas —no solo id y nombre— porque el carrito necesita saber si la
+       * categoría de una línea sigue habilitando la compra.
+       */
+      categorias: Category[];
       productos: Product[];
       /** Solo las activas: una zona apagada no se ofrece. */
       zonas: DeliveryZone[];
@@ -90,11 +98,16 @@ export const CATALOGO_VACIO: FuenteCatalogo = { modo: "carta", secciones: [] };
 function motivoDeProducto(
   producto: Product,
   ahora: Date,
-  zona: string
+  zona: string,
+  comprables: ReadonlySet<string> | null
 ): MotivoNoComprable | undefined {
   /* El orden importa: un producto sin precio legible es un problema de datos y
      hay que poder distinguirlo de uno que el local apagó a propósito. */
   if (producto.priceCents <= 0) return "INVALID_PRICE";
+  if (producto.archived) return "ARCHIVED";
+  if (comprables !== null && !comprables.has(producto.categoryId)) {
+    return "CATEGORY_INACTIVE";
+  }
   if (!producto.active) return "INACTIVE";
   if (producto.soldOut) return "SOLD_OUT";
   if (producto.stockQuantity !== null && producto.stockQuantity <= 0) {
@@ -108,9 +121,10 @@ function motivoDeProducto(
 export function vistaDeProducto(
   producto: Product,
   ahora: Date = new Date(),
-  zona = "America/Montevideo"
+  zona = "America/Montevideo",
+  categoriasComprables: ReadonlySet<string> | null = null
 ): ProductoVista {
-  const motivo = motivoDeProducto(producto, ahora, zona);
+  const motivo = motivoDeProducto(producto, ahora, zona, categoriasComprables);
   const precioValido = producto.priceCents > 0;
   return {
     id: producto.id,
@@ -123,7 +137,15 @@ export function vistaDeProducto(
     stageImageUrl: producto.stageImageUrl,
     badge: producto.badge,
     ingredients: producto.ingredients,
-    optionGroups: [...producto.optionGroups].sort((a, b) => a.position - b.position),
+    /* Los grupos apagados no se ofrecen: la hoja del producto no puede pedirle
+       al cliente que elija algo que el local retiró. */
+    optionGroups: producto.optionGroups
+      .filter((g) => g.active)
+      .sort((a, b) => a.position - b.position)
+      .map((g) => ({
+        ...g,
+        options: [...g.options].sort((a, b) => a.position - b.position),
+      })),
     comprable: motivo === undefined,
     motivo,
     maximo: producto.stockQuantity ?? undefined,
@@ -141,13 +163,19 @@ export function seccionesDeCatalogo(
   ahora: Date = new Date(),
   zona = "America/Montevideo"
 ): SeccionVista[] {
+  /* Las categorías que llegan acá son las que la tienda puede mostrar: lo que
+     no está en la lista es una categoría apagada, y sus productos dejan de ser
+     comprables aunque el producto en sí siga activo. */
+  const comprables = new Set(categorias.map((c) => c.id));
   return categorias
     .map((categoria) => ({
       id: categoria.id,
       title: categoria.name,
       items: productos
-        .filter((p) => p.categoryId === categoria.id)
-        .map((p) => vistaDeProducto(p, ahora, zona)),
+        /* Lo archivado no se muestra: sigue viajando para que una línea vieja
+           del carrito se pueda degradar con su nombre, no para la vitrina. */
+        .filter((p) => p.categoryId === categoria.id && !p.archived)
+        .map((p) => vistaDeProducto(p, ahora, zona, comprables)),
     }))
     .filter((s) => s.items.length > 0);
 }
@@ -171,13 +199,15 @@ export async function cargarCatalogo(
   const { catalog, settings } = obtenerEcommerce();
   const [categorias, productos, conf, zonas] = await Promise.all([
     catalog.listCategories(),
-    catalog.listProducts({ includeInactive: true }),
+    /* Con archivados: la vitrina los filtra, pero el carrito los necesita para
+       poder decir "ya no está en la carta" con el nombre correcto. */
+    catalog.listProducts({ includeInactive: true, includeArchived: true }),
     settings.getSettings(),
     settings.listDeliveryZones(),
   ]);
   return {
     modo: "ecommerce",
-    categorias: categorias.map((c) => ({ id: c.id, name: c.name })),
+    categorias,
     productos,
     zonas,
     ajustes: conf,

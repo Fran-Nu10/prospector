@@ -17,6 +17,10 @@
 import {
   ahoraIso,
   calcularPedido,
+  descontarStock,
+  faltantesDeStock,
+  productosVivosDeCategoria,
+  reponerStock,
   transicionPermitida,
   normalizarTelefono,
   nuevoId,
@@ -26,13 +30,16 @@ import {
 import type {
   AvailabilityPatch,
   CatalogRepository,
+  CategoryPatch,
   ChangeStatusInput,
   CreateOrderResult,
   DeliveryZoneInput,
   EcommerceRepositories,
+  ListCatalogOptions,
   ListOrdersOptions,
   ListProductsOptions,
   MarkPaidInput,
+  NewCategoryInput,
   NewProductInput,
   OrderRepository,
   ProductPatch,
@@ -71,15 +78,40 @@ function porPosicion<T extends { position: number }>(a: T, b: T): number {
 
 /* ---------------------------------------------------------------------------
  * Catálogo
+ *
+ * Acá se hacen a mano tres cosas que en Postgres serían restricciones de tabla:
+ * la unicidad del slug, la integridad de la referencia a la categoría y el
+ * "no borrar nunca". Se escriben como validaciones del proveedor —y no del
+ * formulario— para que valgan igual cuando la llamada venga de otro lado.
  * ------------------------------------------------------------------------ */
 
-function slugLibre(db: DemoDatabase, nombre: string): string {
-  const base = aSlug(nombre) || "producto";
-  const usados = new Set(db.products.map((p) => p.slug));
+function slugLibre(
+  usados: Iterable<string>,
+  nombre: string,
+  respaldo: string
+): string {
+  const base = aSlug(nombre) || respaldo;
+  const tomados = new Set(usados);
   let slug = base;
   let n = 2;
-  while (usados.has(slug)) slug = `${base}-${n++}`;
+  while (tomados.has(slug)) slug = `${base}-${n++}`;
   return slug;
+}
+
+/** El slug es la dirección pública: dos iguales son dos productos en una URL. */
+function exigirSlugLibre(
+  existentes: readonly { id: string; slug: string }[],
+  slug: string,
+  idActual: string | undefined,
+  que: string
+): void {
+  if (existentes.some((e) => e.id !== idActual && e.slug === slug)) {
+    throw new EcommerceError(
+      "DUPLICATE_SLUG",
+      `Ya hay ${que} con la dirección "${slug}".`,
+      { slug }
+    );
+  }
 }
 
 function actualizarProducto(
@@ -97,12 +129,34 @@ function actualizarProducto(
   return { db: { ...db, products }, producto };
 }
 
+/**
+ * Reordena una lista por `position` respetando los ids que llegaron. Lo que no
+ * vino queda detrás, con su orden relativo intacto: reordenar una categoría no
+ * puede desordenar el resto de la carta.
+ */
+function reordenar<T extends { id: string; position: number }>(
+  elementos: readonly T[],
+  orderedIds: readonly string[],
+  alcanza: (e: T) => boolean
+): T[] {
+  const orden = new Map(orderedIds.map((id, i) => [id, i]));
+  return elementos.map((e) => {
+    if (!alcanza(e)) return e;
+    const nueva = orden.get(e.id);
+    return {
+      ...e,
+      position: nueva === undefined ? orden.size + e.position : nueva,
+    };
+  });
+}
+
 const catalogo: CatalogRepository = {
-  async listCategories(options) {
+  async listCategories(options: ListCatalogOptions = {}) {
     const db = leerDb();
     return copiar(
       db.categories
-        .filter((c) => options?.includeInactive || c.active)
+        .filter((c) => options.includeArchived || !c.archived)
+        .filter((c) => options.includeInactive || c.active)
         .sort(porPosicion)
     );
   },
@@ -111,6 +165,7 @@ const catalogo: CatalogRepository = {
     const db = leerDb();
     return copiar(
       db.products
+        .filter((p) => options.includeArchived || !p.archived)
         .filter((p) => options.includeInactive || p.active)
         .filter((p) => !options.categoryId || p.categoryId === options.categoryId)
         .sort(porPosicion)
@@ -134,6 +189,11 @@ const catalogo: CatalogRepository = {
           categoryId: input.categoryId,
         });
       }
+      const slug =
+        input.slug ??
+        slugLibre(db.products.map((p) => p.slug), input.name, "producto");
+      exigirSlugLibre(db.products, slug, undefined, "otro producto");
+
       const ultimaPosicion = db.products
         .filter((p) => p.categoryId === input.categoryId)
         .reduce((max, p) => Math.max(max, p.position), -1);
@@ -141,7 +201,7 @@ const catalogo: CatalogRepository = {
       nuevo = {
         id: nuevoId(),
         categoryId: input.categoryId,
-        slug: input.slug ?? slugLibre(db, input.name),
+        slug,
         name: input.name,
         description: input.description,
         priceCents: input.priceCents,
@@ -155,6 +215,7 @@ const catalogo: CatalogRepository = {
         stageImageUrl: input.stageImageUrl,
         optionGroups: input.optionGroups ?? [],
         availability: input.availability ?? [],
+        archived: false,
         createdAt: creado,
         updatedAt: creado,
       };
@@ -166,11 +227,21 @@ const catalogo: CatalogRepository = {
   async updateProduct(id, patch: ProductPatch) {
     let resultado!: Product;
     escribirDb((db) => {
+      if (patch.slug !== undefined) {
+        exigirSlugLibre(db.products, patch.slug, id, "otro producto");
+      }
+      if (
+        patch.categoryId !== undefined &&
+        !db.categories.some((c) => c.id === patch.categoryId)
+      ) {
+        throw new EcommerceError("NOT_FOUND", "Esa categoría no existe.", {
+          categoryId: patch.categoryId,
+        });
+      }
       const { db: siguiente, producto } = actualizarProducto(db, id, (p) => ({
         ...p,
         ...patch,
         id: p.id,
-        slug: p.slug,
         createdAt: p.createdAt,
         updatedAt: ahoraIso(),
       }));
@@ -178,6 +249,44 @@ const catalogo: CatalogRepository = {
       return siguiente;
     });
     return copiar(resultado);
+  },
+
+  async duplicateProduct(id) {
+    const creado = ahoraIso();
+    let copia!: Product;
+    escribirDb((db) => {
+      const original = db.products.find((p) => p.id === id);
+      if (!original) {
+        throw new EcommerceError("NOT_FOUND", "Ese producto no existe.", { id });
+      }
+      const nombre = `${original.name} (copia)`;
+      const ultimaPosicion = db.products
+        .filter((p) => p.categoryId === original.categoryId)
+        .reduce((max, p) => Math.max(max, p.position), -1);
+
+      copia = {
+        ...copiar(original),
+        id: nuevoId(),
+        slug: slugLibre(db.products.map((p) => p.slug), nombre, "producto"),
+        name: nombre,
+        /* Entra APAGADA: publicar una copia sin revisarla pone el mismo
+           producto dos veces en la vitrina. */
+        active: false,
+        archived: false,
+        position: ultimaPosicion + 1,
+        /* Los grupos y opciones también estrenan id: si compartieran el del
+           original, editar la copia editaría al padre. */
+        optionGroups: original.optionGroups.map((g) => ({
+          ...g,
+          id: nuevoId(),
+          options: g.options.map((o) => ({ ...o, id: nuevoId() })),
+        })),
+        createdAt: creado,
+        updatedAt: creado,
+      };
+      return { ...db, products: [...db.products, copia] };
+    });
+    return copiar(copia);
   },
 
   async setAvailability(id, patch: AvailabilityPatch) {
@@ -199,19 +308,73 @@ const catalogo: CatalogRepository = {
   },
 
   async reorderProducts(categoryId, orderedIds) {
+    escribirDb((db) => ({
+      ...db,
+      products: reordenar(
+        db.products,
+        orderedIds,
+        (p) => p.categoryId === categoryId
+      ),
+    }));
+  },
+
+  async createCategory(input: NewCategoryInput) {
+    let nueva!: Category;
     escribirDb((db) => {
-      const orden = new Map(orderedIds.map((id, i) => [id, i]));
-      /* Los ids que no vinieron en la lista quedan detrás, conservando su
-         orden relativo: reordenar una página no puede reventar el resto. */
-      const products = db.products.map((p) =>
-        p.categoryId === categoryId && orden.has(p.id)
-          ? { ...p, position: orden.get(p.id)!, updatedAt: ahoraIso() }
-          : p.categoryId === categoryId
-            ? { ...p, position: orden.size + p.position }
-            : p
-      );
-      return { ...db, products };
+      const slug =
+        input.slug ??
+        slugLibre(db.categories.map((c) => c.slug), input.name, "categoria");
+      exigirSlugLibre(db.categories, slug, undefined, "otra categoría");
+
+      nueva = {
+        id: nuevoId(),
+        slug,
+        name: input.name,
+        position:
+          input.position ??
+          db.categories.reduce((max, c) => Math.max(max, c.position), -1) + 1,
+        active: input.active ?? true,
+        archived: false,
+      };
+      return { ...db, categories: [...db.categories, nueva] };
     });
+    return copiar(nueva);
+  },
+
+  async updateCategory(id, patch: CategoryPatch) {
+    let resultado!: Category;
+    escribirDb((db) => {
+      const indice = db.categories.findIndex((c) => c.id === id);
+      if (indice < 0) {
+        throw new EcommerceError("NOT_FOUND", "Esa categoría no existe.", { id });
+      }
+      if (patch.slug !== undefined) {
+        exigirSlugLibre(db.categories, patch.slug, id, "otra categoría");
+      }
+      /* Archivar una categoría con productos vivos los dejaría colgando de un
+         padre invisible: ni en la carta ni en el panel. Primero se mueven o se
+         archivan los productos. */
+      if (patch.archived && productosVivosDeCategoria(id, db.products).length) {
+        throw new EcommerceError(
+          "CATEGORY_NOT_EMPTY",
+          "Esa categoría todavía tiene productos. Movelos a otra o archivalos primero.",
+          { categoryId: id }
+        );
+      }
+
+      resultado = { ...db.categories[indice], ...patch, id };
+      const categories = [...db.categories];
+      categories[indice] = resultado;
+      return { ...db, categories };
+    });
+    return copiar(resultado);
+  },
+
+  async reorderCategories(orderedIds) {
+    escribirDb((db) => ({
+      ...db,
+      categories: reordenar(db.categories, orderedIds, () => true),
+    }));
   },
 };
 
@@ -237,6 +400,7 @@ const configuracion: SettingsRepository = {
     const db = leerDb();
     return copiar(
       db.deliveryZones
+        .filter((z) => options?.includeArchived || !z.archived)
         .filter((z) => options?.includeInactive || z.active)
         .sort(porPosicion)
     );
@@ -258,6 +422,7 @@ const configuracion: SettingsRepository = {
         position:
           zona.position ?? existente?.position ?? db.deliveryZones.length,
         estimatedMinutes: zona.estimatedMinutes ?? existente?.estimatedMinutes,
+        archived: zona.archived ?? existente?.archived ?? false,
       };
 
       const deliveryZones = existente
@@ -268,46 +433,18 @@ const configuracion: SettingsRepository = {
     });
     return copiar(resultado);
   },
+
+  async reorderDeliveryZones(orderedIds) {
+    escribirDb((db) => ({
+      ...db,
+      deliveryZones: reordenar(db.deliveryZones, orderedIds, () => true),
+    }));
+  },
 };
 
 /* ---------------------------------------------------------------------------
  * Pedidos
  * ------------------------------------------------------------------------ */
-
-/** Descuenta stock y agota lo que llegó a cero. */
-function descontarStock(products: Product[], items: OrderItem[]): Product[] {
-  const consumo = new Map<string, number>();
-  for (const item of items) {
-    consumo.set(item.productId, (consumo.get(item.productId) ?? 0) + item.quantity);
-  }
-  return products.map((p) => {
-    const cantidad = consumo.get(p.id);
-    if (!cantidad || p.stockQuantity === null) return p;
-    const restante = Math.max(0, p.stockQuantity - cantidad);
-    return { ...p, stockQuantity: restante, soldOut: restante === 0 || p.soldOut };
-  });
-}
-
-/**
- * Repone stock al rechazar o cancelar. Solo levanta el "agotado" cuando el
- * producto estaba en cero: si alguien lo agotó a mano, sigue agotado.
- */
-function reponerStock(products: Product[], items: OrderItem[]): Product[] {
-  const consumo = new Map<string, number>();
-  for (const item of items) {
-    consumo.set(item.productId, (consumo.get(item.productId) ?? 0) + item.quantity);
-  }
-  return products.map((p) => {
-    const cantidad = consumo.get(p.id);
-    if (!cantidad || p.stockQuantity === null) return p;
-    const estabaEnCero = p.stockQuantity === 0;
-    return {
-      ...p,
-      stockQuantity: p.stockQuantity + cantidad,
-      soldOut: estabaEnCero ? false : p.soldOut,
-    };
-  });
-}
 
 const pedidos: OrderRepository = {
   async create(draft: OrderDraft): Promise<CreateOrderResult> {
@@ -328,6 +465,7 @@ const pedidos: OrderRepository = {
         products: db.products,
         zones: db.deliveryZones,
         settings: db.settings,
+        categories: db.categories,
       });
 
       if (
@@ -375,6 +513,7 @@ const pedidos: OrderRepository = {
           cashReceivedCents: draft.payment.cashReceivedCents,
         },
         notes: draft.notes,
+        stockApplied: false,
         statusHistory: [
           {
             id: nuevoId(),
@@ -388,11 +527,11 @@ const pedidos: OrderRepository = {
         updatedAt: ahora,
       };
 
-      return {
-        ...db,
-        products: descontarStock(db.products, items),
-        orders: [...db.orders, creado],
-      };
+      /* El stock NO se descuenta acá: se descuenta cuando el local ACEPTA el
+         pedido. Hasta ese momento nadie se comprometió a cocinarlo, y reservar
+         unidades por pedidos que después se rechazan deja la carta agotada de
+         mentira. Ver `stockApplied` en `types.ts`. */
+      return { ...db, orders: [...db.orders, creado] };
     });
 
     return { order: copiar(creado), duplicated: false };
@@ -480,6 +619,33 @@ const pedidos: OrderRepository = {
         );
       }
 
+      /* --- STOCK ---------------------------------------------------------
+       *
+       * Aceptar es el momento en que el local se compromete: ahí y solo ahí se
+       * descuenta. `stockApplied` hace que la operación sea de UNA sola vez —
+       * dos pestañas aceptando el mismo pedido descuentan una— y que cancelar
+       * reponga únicamente lo que efectivamente se restó.
+       */
+      const cae = to === "rejected" || to === "cancelled";
+      const acepta = to === "confirmed";
+      const descuenta = acepta && !actual.stockApplied;
+      const repone = cae && actual.stockApplied;
+
+      if (descuenta) {
+        const faltantes = faltantesDeStock(actual.items, db.products);
+        if (faltantes.length) {
+          throw new EcommerceError(
+            "STOCK_INSUFFICIENT",
+            faltantes.length === 1
+              ? `No hay stock suficiente de ${faltantes[0].nombre}: quedan ${faltantes[0].disponible} y el pedido lleva ${faltantes[0].pedido}.`
+              : `No hay stock suficiente de: ${faltantes
+                  .map((f) => `${f.nombre} (quedan ${f.disponible}, lleva ${f.pedido})`)
+                  .join(", ")}.`,
+            { faltantes }
+          );
+        }
+      }
+
       const ahora = ahoraIso();
       const evento: OrderStatusEvent = {
         id: nuevoId(),
@@ -491,14 +657,13 @@ const pedidos: OrderRepository = {
         createdAt: ahora,
       };
 
-      const cae = to === "rejected" || to === "cancelled";
-
       resultado = {
         ...actual,
         status: to,
         estimatedMinutes:
           input.estimatedMinutes ?? actual.estimatedMinutes,
         rejectionReason: cae ? input.reason : actual.rejectionReason,
+        stockApplied: descuenta ? true : repone ? false : actual.stockApplied,
         /* El pago NO se aprueba solo al completar: dar por cobrado lo que quizá
            no se cobró ensucia el reporte. Solo se cancela cuando el pedido cae. */
         payment:
@@ -515,7 +680,11 @@ const pedidos: OrderRepository = {
       return {
         ...db,
         orders,
-        products: cae ? reponerStock(db.products, actual.items) : db.products,
+        products: descuenta
+          ? descontarStock(db.products, actual.items)
+          : repone
+            ? reponerStock(db.products, actual.items)
+            : db.products,
       };
     });
     return copiar(resultado);

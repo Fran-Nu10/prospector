@@ -18,12 +18,17 @@ import {
   suscribirCarrito,
   vaciarCarrito,
 } from "../../../web/lib/ecommerce/carrito";
-import { resolverCarrito, type CarritoResuelto } from "../../../web/lib/ecommerce/domain";
+import {
+  deliveryDisponible,
+  resolverCarrito,
+  type CarritoResuelto,
+} from "../../../web/lib/ecommerce/domain";
 import {
   obtenerEcommerce,
   suscribirEcommerce,
 } from "../../../web/lib/ecommerce/service";
 import type {
+  Category,
   DeliveryZone,
   Product,
   RestaurantOperationalSettings,
@@ -58,6 +63,10 @@ import {
 export interface Tienda {
   /** `false` = carta: se muestra, no se vende (prospecto sin ecommerce). */
   interactivo: boolean;
+  /** `false` cuando el local apagó "aceptar pedidos": se mira, no se compra. */
+  aceptandoPedidos: boolean;
+  /** Habilitado Y con al menos una zona activa. Lo decide el dominio. */
+  hayDelivery: boolean;
   /** Slug del prospecto: lo necesitan los enlaces a checkout y a un pedido. */
   slug: string;
   secciones: SeccionVista[];
@@ -122,7 +131,7 @@ export default function TiendaProvider({
 
   /* El estado arranca con lo que trajo el servidor: el primer render del
      cliente pinta exactamente lo mismo y no hay desajuste de hidratación. */
-  const [categorias, setCategorias] = useState(
+  const [categorias, setCategorias] = useState<Category[]>(
     fuente.modo === "ecommerce" ? fuente.categorias : []
   );
   const [productos, setProductos] = useState<Product[]>(
@@ -145,12 +154,12 @@ export default function TiendaProvider({
     const cargar = () => {
       Promise.all([
         catalog.listCategories(),
-        catalog.listProducts({ includeInactive: true }),
+        catalog.listProducts({ includeInactive: true, includeArchived: true }),
         settings.listDeliveryZones(),
         settings.getSettings(),
       ]).then(([cats, prods, zs, conf]) => {
         if (!vivo) return;
-        setCategorias(cats.map((c) => ({ id: c.id, name: c.name })));
+        setCategorias(cats);
         setProductos(prods);
         setZonas(zs);
         setAjustes(conf);
@@ -182,9 +191,17 @@ export default function TiendaProvider({
   const carrito = useMemo(
     () =>
       interactivo
-        ? resolverCarrito(estadoCarrito.items, productos)
+        ? /* Las categorías entran en la cuenta: una línea vieja de una categoría
+             apagada se muestra, pero no se puede pedir ni suma al total. */
+          resolverCarrito(
+            estadoCarrito.items,
+            productos,
+            new Date(),
+            ajustes?.timezone,
+            categorias
+          )
         : CarritoVacio,
-    [estadoCarrito, productos, interactivo]
+    [estadoCarrito, productos, categorias, ajustes?.timezone, interactivo]
   );
 
   const [productoAbierto, setProductoAbierto] = useState<ProductoVista | null>(null);
@@ -224,6 +241,8 @@ export default function TiendaProvider({
   const valor = useMemo<Tienda>(
     () => ({
       interactivo,
+      aceptandoPedidos: !interactivo || ajustes?.acceptingOrders !== false,
+      hayDelivery: !!ajustes && deliveryDisponible(ajustes, zonas),
       slug,
       secciones,
       zonas,
