@@ -266,6 +266,264 @@ console.log('\n=== catálogo cambiante');
 }
 
 
+/* ---------------------------------------------------------------------------
+ * GEOMETRÍA DEL ESCENARIO
+ *
+ * La vitrina es UNA composición: todos los productos apoyan en la misma línea,
+ * comparten el eje central y dejan el nombre mayormente legible. Esto no se
+ * puede comprobar "mirando bien": se mide.
+ *
+ * La caja visible de cada burger no es la del `<img>` —el lienzo es cuadrado y
+ * transparente alrededor—, así que se calcula con la geometría que dejó
+ * anotada el script de normalización.
+ * ------------------------------------------------------------------------ */
+
+const GEO = JSON.parse(
+  fs.readFileSync('assets/hamburgueseria/geometria-productos.json', 'utf8')
+);
+const MENU = JSON.parse(fs.readFileSync('data/prospects/_ejemplo.json', 'utf8')).menu;
+const aslug = (t) =>
+  t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+   .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+console.log('\n=== assets del menú');
+{
+  /* WebP de verdad, no un PNG con la extensión cambiada. */
+  const esWebp = (ruta) => {
+    const c = fs.readFileSync(`web/public${ruta}`).subarray(0, 12);
+    return c.subarray(0, 4).toString() === 'RIFF' && c.subarray(8, 12).toString() === 'WEBP';
+  };
+  const burgers = MENU[0].items;
+  const acomp = MENU[1].items;
+
+  chk(
+    burgers.every((i) => i.stageImage && esWebp(i.stageImage)),
+    `las ${burgers.length} hamburguesas tienen recorte de vitrina en WebP real`
+  );
+  chk(
+    burgers.every((i) => GEO.productos[aslug(i.name)]),
+    'y cada una tiene su geometría medida'
+  );
+  chk(
+    acomp.every((i) => i.image && esWebp(i.image)),
+    `los ${acomp.length} acompañamientos tienen foto en WebP real`
+  );
+  /* El archivo se asignó POR NOMBRE: la ruta pública lleva el slug del
+     producto, así que un cambio de orden en el JSON no puede reasignarlas. */
+  chk(
+    acomp.every((i) => i.image.endsWith(`/${aslug(i.name)}.webp`)),
+    'cada acompañamiento apunta al archivo con SU nombre, no al que le tocó por orden'
+  );
+
+  const altos = Object.values(GEO.productos).map((g) => g.alto);
+  chk(
+    Object.values(GEO.productos).every((g) => Math.abs(g.y + g.alto - GEO.lineaBase) < 0.002),
+    'todos los recortes apoyan en la misma línea del lienzo'
+  );
+  chk(
+    Math.max(...altos) - Math.min(...altos) <= 0.06,
+    `las alturas visibles caen en una banda estrecha (${Math.min(...altos).toFixed(3)}–${Math.max(...altos).toFixed(3)} del lienzo)`
+  );
+}
+
+for (const [w, h, tag] of [[1440, 900, 'd1440'], [390, 844, 'm390']]) {
+  console.log(`\n=== escenario ${w}x${h}`);
+  const p = await b.newPage({ viewport: { width: w, height: h } });
+  await p.goto(U, { waitUntil: 'networkidle' });
+  await p.addStyleTag({ content: '*{scroll-behavior:auto!important}' });
+  await p.evaluate(() => document.querySelector('#menu').scrollIntoView());
+  await p.waitForTimeout(700);
+
+  const medidas = await p.evaluate((geo) => {
+    const aslug = (t) =>
+      t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const salida = [];
+    for (const li of document.querySelectorAll('#menu li[aria-posinset]')) {
+      const h4 = li.querySelector('h4');
+      const esc = li.querySelector('[data-escena]');
+      const media = li.querySelector('[data-media]');
+      const info = li.querySelector('[data-escena] ~ div');
+      if (!h4 || !esc) continue;
+      const caja = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; };
+      const rango = document.createRange();
+      rango.selectNodeContents(h4);
+      const texto = rango.getBoundingClientRect();
+      const g = media ? geo.productos[aslug(h4.textContent.trim())] : null;
+      const mc = media ? caja(media) : null;
+      salida.push({
+        nombre: h4.textContent.trim(),
+        variante: esc.dataset.escena,
+        tipo: media ? media.dataset.media : null,
+        escena: caja(esc),
+        h4: caja(h4),
+        textoAncho: texto.width,
+        info: info ? caja(info) : null,
+        visible: g && mc
+          ? { x: mc.x + g.x * mc.w, y: mc.y + g.y * mc.h, w: g.ancho * mc.w, h: g.alto * mc.h }
+          : mc,
+      });
+    }
+    return salida;
+  }, GEO);
+
+  const burgers = medidas.filter((m) => m.variante === 'primary');
+  const acompanamientos = medidas.filter((m) => m.variante === 'compact');
+
+  chk(burgers.length === 5, `los cinco productos usan el escenario principal (${burgers.length})`);
+  chk(
+    burgers.every((m) => m.tipo === 'recorte'),
+    'los cinco muestran su recorte transparente, ninguno la foto opaca'
+  );
+
+  const dif = (v) => Math.max(...v) - Math.min(...v);
+  const bases = burgers.map((m) => m.visible.y + m.visible.h - m.escena.y - m.escena.h);
+  chk(dif(bases) < 2, `todos apoyan en la misma línea base (dif ${dif(bases).toFixed(1)}px)`);
+
+  const ejes = burgers.map((m) => m.visible.x + m.visible.w / 2 - (m.escena.x + m.escena.w / 2));
+  chk(
+    Math.max(...ejes.map(Math.abs)) < 8,
+    `todos centrados sobre el eje del escenario (desvío máx ${Math.max(...ejes.map(Math.abs)).toFixed(1)}px)`
+  );
+
+  const relAlto = burgers.map((m) => m.visible.h / m.escena.h);
+  chk(
+    dif(relAlto) < 0.08,
+    `misma escala percibida (alto ${(Math.min(...relAlto) * 100).toFixed(0)}–${(Math.max(...relAlto) * 100).toFixed(0)}% del escenario)`
+  );
+
+  const basesNombre = burgers.map((m) => (m.escena.y + m.escena.h - (m.h4.y + m.h4.h)) / m.escena.h);
+  chk(dif(basesNombre) < 0.01, 'el nombre apoya en la misma altura en todos los slides');
+
+  chk(
+    medidas.every((m) => m.textoAncho <= m.h4.w + 1),
+    'ningún nombre se sale del escenario: los largos achican con clamp'
+  );
+
+  /* Se mide como FRACCIÓN del escenario y no en píxeles: los slides que no
+     son el activo están levemente escalados por la animación de cambio, y en
+     píxeles crudos esa escala se confunde con un salto de layout. */
+  /* Se mide como FRACCIÓN del escenario y por variante. Dos razones: los
+     slides que no son el activo están levemente escalados por la animación de
+     cambio —en píxeles crudos esa escala se confunde con un salto de layout—, y
+     las hamburguesas y los acompañamientos tienen escenarios de distinto alto a
+     propósito. Lo que tiene que ser constante es el hueco DENTRO de cada
+     variante. */
+  const hueco = (lista) =>
+    lista.filter((m) => m.info).map((m) => (m.info.y - (m.escena.y + m.escena.h)) / m.escena.h);
+  const difInfo = Math.max(dif(hueco(burgers)), dif(hueco(acompanamientos)));
+  chk(
+    difInfo < 0.005,
+    `la información inferior arranca siempre a la misma altura (dif ${(difInfo * 100).toFixed(2)}% del escenario)`
+  );
+
+  const bacon = burgers.find((m) => /bacon/i.test(m.nombre));
+  chk(bacon?.tipo === 'recorte', 'Bacon Fest ya no muestra el rectángulo opaco');
+
+  chk(
+    acompanamientos.length === 3 && acompanamientos.every((m) => m.tipo === 'foto'),
+    'los acompañamientos muestran su foto en la variante compacta'
+  );
+  const ejesAcomp = acompanamientos.map((m) => m.visible.x + m.visible.w / 2 - (m.escena.x + m.escena.w / 2));
+  chk(
+    Math.max(...ejesAcomp.map(Math.abs)) < 2,
+    'y también están centrados sobre el eje'
+  );
+
+  /* Transparencia REAL del recorte, leída del píxel: una esquina del lienzo
+     tiene que tener alfa 0. Si alguien reemplaza el asset por un JPEG opaco,
+     acá se nota. */
+  const alfa = await p.evaluate(async (src) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return ctx.getImageData(2, 2, 1, 1).data[3];
+  }, MENU[0].items[1].stageImage);
+  chk(alfa === 0, `el recorte de Bacon Fest tiene alfa real (esquina = ${alfa})`);
+
+  const overflow = await p.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  chk(overflow <= 1, `sin overflow horizontal (${overflow}px)`);
+
+  await p.locator('#menu').screenshot({ path: `${OUT}/${tag}-menu.png` });
+  await p.close();
+}
+
+
+/* ---------------------------------------------------------------------------
+ * BASE YA GUARDADA
+ *
+ * Lo que de verdad importa el día del deploy: un navegador que YA tiene la demo
+ * usada —con pedidos y precios propios— tiene que ver los assets nuevos sin que
+ * nadie le explique cómo borrar `localStorage`.
+ * ------------------------------------------------------------------------ */
+
+console.log('\n=== base guardada de la versión anterior');
+{
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  await p.goto(U, { waitUntil: 'networkidle' });
+  await p.waitForTimeout(600);
+
+  /* Se fabrica la base ANTERIOR a partir de la actual: versión 2, sin las
+     imágenes que este cambio agrega, y con un pedido del dueño adentro. */
+  const preparado = await p.evaluate(() => {
+    const claveV3 = Object.keys(localStorage).find((k) => /ecommerce.*:v3$/.test(k));
+    const db = JSON.parse(localStorage.getItem(claveV3));
+    const vieja = {
+      ...db,
+      version: 2,
+      products: db.products.map((prod) => {
+        if (prod.name === 'Bacon Fest') return { ...prod, stageImageUrl: undefined };
+        if (prod.name === 'Papas de la casa') return { ...prod, imageUrl: undefined };
+        return prod;
+      }),
+      settings: { ...db.settings, defaultPrepMinutes: 42 },
+      orders: [{ id: 'viejo', orderNumber: '0009', totalCents: 55500 }],
+    };
+    localStorage.setItem(claveV3.replace(/:v3$/, ':v2'), JSON.stringify(vieja));
+    localStorage.removeItem(claveV3);
+    return claveV3;
+  });
+
+  await p.reload({ waitUntil: 'networkidle' });
+  await p.addStyleTag({ content: '*{scroll-behavior:auto!important}' });
+  await p.evaluate(() => document.querySelector('#menu').scrollIntoView());
+  await p.waitForTimeout(900);
+
+  /* El segundo slide de la PRIMERA pista es Bacon Fest; la segunda pista son
+     los acompañamientos y también tiene un slide 2. */
+  const bacon = p
+    .locator('#menu [aria-roledescription="carrusel"]')
+    .first()
+    .locator('li[aria-posinset="2"] [data-media]');
+  chk(
+    (await bacon.getAttribute('data-media')) === 'recorte',
+    'una base vieja recibe los assets nuevos sin borrar nada a mano'
+  );
+
+  const estado = await p.evaluate((clave) => {
+    const db = JSON.parse(localStorage.getItem(clave) ?? 'null');
+    return db && {
+      version: db.version,
+      pedidos: db.orders.length,
+      numero: db.orders[0]?.orderNumber,
+      prep: db.settings.defaultPrepMinutes,
+    };
+  }, preparado);
+  chk(
+    estado?.version === 3 && estado.pedidos === 1 && estado.numero === '0009' && estado.prep === 42,
+    `la migración conservó el pedido y la configuración (${JSON.stringify(estado)})`
+  );
+
+  await p.close();
+}
+
+
 await b.close();
 console.log(fallos === 0 ? '\nTODO OK' : `\n${fallos} FALLO(S)`);
 process.exit(fallos === 0 ? 0 : 1);

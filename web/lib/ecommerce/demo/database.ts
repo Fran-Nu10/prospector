@@ -33,6 +33,7 @@ import type {
   Product,
   RestaurantOperationalSettings,
 } from "../types";
+import { migrarBase, VERSIONES_MIGRABLES } from "./migraciones";
 import { SLUG_INSTALACION, seedPorDefecto } from "./seed";
 
 export interface DemoDatabase {
@@ -45,19 +46,34 @@ export interface DemoDatabase {
 }
 
 /**
- * Subir esto invalida lo guardado y vuelve al seed.
+ * Versión de la base.
  *
- * v2 (fase 5): categorías, productos y zonas suman `archived`; el pedido suma
- * `stockApplied`. Una base v1 no tiene esos campos y migrarla a mano por un
- * almacenamiento de demostración no vale la pena: se regenera.
+ * v1 → v2 (fase 5): categorías, productos y zonas suman `archived`; el pedido
+ * suma `stockApplied`. Una v1 no tiene esos campos y se regenera.
+ *
+ * v2 → v3: assets normalizados del menú. NO se descarta nada: `migraciones.ts`
+ * levanta la v2 guardada, completa las imágenes que faltaban y devuelve todo
+ * lo demás igual. Un dueño que ya cargó pedidos y corrigió precios no puede
+ * perderlos porque cambiaron unas fotos.
  */
-const VERSION = 2 as const;
+const VERSION = 3 as const;
 
 /**
  * Clave con espacio de nombres por instalación: dos demos abiertas en el mismo
  * navegador no pueden pisarse los pedidos.
  */
 export const CLAVE_DEMO = `prospector:ecommerce:${SLUG_INSTALACION}:v${VERSION}`;
+
+/**
+ * Claves de versiones anteriores, de la más nueva a la más vieja.
+ *
+ * La versión va DENTRO de la clave, así que subirla esconde lo guardado en vez
+ * de invalidarlo: sin buscar acá, una base perfectamente migrable quedaría
+ * olvidada en `localStorage` y el navegador arrancaría de cero.
+ */
+const CLAVES_ANTERIORES = VERSIONES_MIGRABLES.slice()
+  .sort((a, b) => b - a)
+  .map((v) => `prospector:ecommerce:${SLUG_INSTALACION}:v${v}`);
 
 let cache: DemoDatabase | null = null;
 let semillaServidor: DemoDatabase | null = null;
@@ -146,6 +162,25 @@ export function leerDb(): DemoDatabase {
       console.warn(
         "[ecommerce demo] el contenido guardado no es JSON válido; se regenera desde el seed."
       );
+    }
+  }
+
+  /* Nada bajo la clave de esta versión: puede haber una base anterior. Se
+     migra —conservando pedidos, precios y configuración— y se guarda bajo la
+     clave nueva. La vieja se deja donde está: si algo saliera mal, el dato
+     original sigue existiendo. */
+  for (const clave of CLAVES_ANTERIORES) {
+    const anterior = window.localStorage.getItem(clave);
+    if (!anterior) continue;
+    try {
+      const migrada = migrarBase(JSON.parse(anterior) as unknown);
+      if (migrada && esBaseValida(migrada)) {
+        cache = migrada;
+        persistir(cache);
+        return cache;
+      }
+    } catch {
+      console.warn(`[ecommerce demo] ${clave} ilegible; se ignora.`);
     }
   }
 

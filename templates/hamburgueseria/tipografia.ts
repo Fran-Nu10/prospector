@@ -111,7 +111,13 @@ export function tamanoNombreProducto(
    * nombres de dos palabras a un tamaño que garantizaba el corte. */
   const caracteres = Math.max(nombre.trim().length, 1);
   const divisor = (caracteres * AVANCE_ANTON).toFixed(2);
-  return `clamp(${piso}px, min(calc(${alto} * ${factor}), calc(92vw / ${divisor})), ${techo}px)`;
+  /* 80vw y no 92vw: el escenario NO es el viewport. La pista del carrusel
+     tiene su propio margen, así que el ancho real disponible en mobile es
+     ~80vw. Con la referencia de más, el `clamp` daba por bueno un tamaño que
+     no entraba y un nombre largo —OKLAHOMA— se salía del escenario por los dos
+     lados en vez de achicarse, que es exactamente lo que este cálculo existe
+     para evitar. */
+  return `clamp(${piso}px, min(calc(${alto} * ${factor}), calc(80vw / ${divisor})), ${techo}px)`;
 }
 
 /** Numeral de sección del póster: 1 → "01". */

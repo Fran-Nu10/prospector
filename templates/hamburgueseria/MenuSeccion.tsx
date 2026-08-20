@@ -119,19 +119,29 @@ export const VARIANTE = {
        nombre en cualquier viewport. Medido por ancho, la relación se movía en
        cada breakpoint y el solapamiento se perdía. */
     media: "h-[92%] max-h-[86vw] lg:h-[112%] lg:max-h-[46vw]",
-    /* El producto vive sobre el MISMO eje izquierdo que el nombre, la bajada
-       y el precio; en desktop se corre un 10% para no arrancar pegado al
-       borde. Suena contraintuitivo hasta que se miden los nombres: el nombre
-       empieza siempre a la izquierda y el más corto del menú ("Verde") termina
-       al 34% del ancho — con el producto a la derecha no se tocaban nunca. */
-    alineacionMedia: "justify-start lg:pl-[10%]",
+    /* EJE ÚNICO: el producto va centrado en el escenario, en todos los anchos
+       y para todos los productos. El nombre queda detrás, alineado a la
+       izquierda como el resto de la información, y la burger le cruza la
+       franja central: eso es lo que da profundidad. Antes el producto se
+       apoyaba en el borde izquierdo y cada slide parecía una composición
+       distinta según cuánto ocupara la foto. */
+    alineacionMedia: "justify-center",
     /* Foto cuadrada de fallback: NO puede pasar por delante del nombre —es
-       opaca y lo borraría—, así que se achica y se apoya al pie, debajo. */
-    mediaFallback: "h-[56%] lg:h-[64%]",
+       opaca y lo borraría—, así que se achica hasta quedar POR DEBAJO de la
+       base del nombre (52.5% / 55%) y comparte el mismo eje y la misma línea
+       de apoyo que los recortes. */
+    mediaFallback: "h-[50%] lg:h-[53%]",
     /* Piso del nombre, medido desde el piso del escenario. El nombre crece
        hacia ARRIBA desde acá: un nombre de dos líneas no empuja su base, así
-       que la burger le tapa siempre la misma franja. */
-    baseNombre: { m: "52.5%", d: "55%" },
+       que la burger le tapa siempre la misma franja.
+
+       CUÁNTO BAJA. La burger apoya en la hairline y su borde superior llega
+       —con los assets normalizados— entre el 60% y el 65% del escenario. El
+       pie del nombre se pone por debajo de esa línea a propósito: es lo que
+       hace que el producto le cruce la franja baja de las letras y aparezca
+       la profundidad. Bajarlo más lo volvería ilegible; subirlo lo despega y
+       el nombre deja de estar "detrás" de nada. */
+    baseNombre: { m: "43%", d: "45%" },
     nombreMobile: { piso: 64, alto: "var(--esc-m)", factor: 0.242, techo: 104 },
     nombreDesktop: { piso: 96, alto: "var(--esc-d)", factor: 0.369, techo: 190 },
     cambio: CAMBIO,
@@ -142,8 +152,8 @@ export const VARIANTE = {
     altoD: "clamp(310px,44svh,455px)",
     escenario: "h-[var(--esc-m)] lg:h-[var(--esc-d)]",
     media: "h-[103%] max-h-[72vw] lg:h-[124%] lg:max-h-[36vw]",
-    alineacionMedia: "justify-start lg:pl-[10%]",
-    mediaFallback: "h-[58%] lg:h-[66%]",
+    alineacionMedia: "justify-center",
+    mediaFallback: "h-[60%] lg:h-[67%]",
     baseNombre: { m: "63%", d: "70%" },
     nombreMobile: { piso: 40, alto: "var(--esc-m)", factor: 0.188, techo: 68 },
     nombreDesktop: { piso: 56, alto: "var(--esc-d)", factor: 0.28, techo: 120 },
@@ -214,13 +224,13 @@ function ProductoMedia({
  * panel no finge un despiece —nada de líneas apuntando a un pan que no está
  * recortado—, es una lista editorial de tipografía mono.
  *
- * DÓNDE SE APOYA, y por qué son dos sitios distintos:
- *   · en desktop la burger vive en la mitad izquierda del escenario, así que
- *     el panel ocupa la franja derecha —el margen negativo lo sube justo sobre
- *     el escenario, sin sacarlo del flujo dos veces—; ahí no tapa nada;
- *   · en mobile la burger ocupa el ancho entero: no hay costado libre. El
- *     panel baja al flujo, debajo del escenario, y empuja la bajada. Antes se
- *     superponía a la burger y no se leía ni la lista ni el producto.
+ * DÓNDE SE APOYA. Debajo del escenario, en el flujo, en TODOS los anchos.
+ * Antes en desktop ocupaba la franja derecha, flotando sobre el escenario: eso
+ * funcionaba mientras la burger se apoyaba a la izquierda. Con el producto
+ * centrado —que es lo que hace que todos los slides se lean igual— esa franja
+ * dejó de estar libre, y una lista de ingredientes pisando el borde de la
+ * hamburguesa se ve peor que una lista debajo. En desktop va a dos columnas
+ * para no estirar la página.
  * ------------------------------------------------------------------------ */
 
 function IngredientesPanel({
@@ -236,7 +246,7 @@ function IngredientesPanel({
     <motion.ul
       id={id}
       role="list"
-      className="pointer-events-none z-[3] mt-16 flex flex-col gap-8 lg:-mt-[var(--esc-d)] lg:h-[var(--esc-d)] lg:w-[38%] lg:self-end lg:justify-center"
+      className="pointer-events-none z-[3] mt-16 flex flex-col gap-8 lg:grid lg:grid-cols-2 lg:gap-x-32"
       initial={animado ? { opacity: 0, y: 12 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={animado ? { opacity: 0, y: 12 } : undefined}
@@ -433,14 +443,21 @@ function ProductoSlide({
             Sin ninguna imagen no hay escenario que armar: el nombre pasa a ser
             un bloque normal y el alto fijo desaparece, porque un hueco de
             350px vacío no es composición, es un error. */}
-        <div className={`relative mt-8 ${tieneMedia ? cfg.escenario : ""}`}>
+        <div
+          data-escena={variante}
+          className={`relative mt-8 ${tieneMedia ? cfg.escenario : ""}`}
+        >
           <motion.h4
+            /* UNA sola posición del nombre. Antes el ancla dependía de si el
+               producto tenía recorte con alfa o foto cuadrada, y el título
+               saltaba de arriba abajo al pasar de un slide a otro. Ahora
+               siempre apoya en la misma base dentro del escenario —crece hacia
+               ARRIBA, así que un nombre de dos líneas no mueve su pie— y lo
+               que cambia es el tamaño de la foto, no el lugar de la palabra. */
             className={`z-0 font-display uppercase leading-heading tracking-display text-hueso text-[length:var(--nombre-m)] lg:text-[length:var(--nombre-d)] ${
-              flotante
-                ? "absolute inset-x-0 bottom-[var(--base-m)] lg:bottom-[var(--base-d)]"
-                : tieneMedia
-                  ? "absolute inset-x-0 top-0"
-                  : "relative pb-16"
+              tieneMedia
+                ? "absolute inset-x-0 bottom-[var(--base-m)] text-center lg:bottom-[var(--base-d)]"
+                : "relative pb-16"
             }`}
             style={{
               /* Dos tamaños en variables CSS: el `clamp` depende de cuántos
@@ -484,11 +501,12 @@ function ProductoSlide({
                La foto cuadrada de fallback no puede hacer eso —es opaca—, así
                que va más chica, apoyada al pie y sin cruzarse con el nombre. */
             <div
-              className={`pointer-events-none absolute inset-0 z-[2] flex items-end ${
-                flotante ? cfg.alineacionMedia : "justify-start"
-              }`}
+              className={`pointer-events-none absolute inset-0 z-[2] flex items-end ${cfg.alineacionMedia}`}
             >
               <div
+                /* Marca para la verificación: dice si lo que se está midiendo
+                   es el recorte con alfa o la foto opaca de fallback. */
+                data-media={flotante ? "recorte" : "foto"}
                 className={`relative aspect-square ${
                   flotante
                     ? `translate-y-[12.5%] ${cfg.media}`
