@@ -772,7 +772,7 @@ seccion("Zonas de delivery y configuración");
 
 /* --- 13 bis. Migración de una base ya guardada ----------------------------- */
 
-seccion("Migración no destructiva (v2 → v3)");
+seccion("Migración no destructiva (v2/v3 → v4)");
 {
   const { seedPorDefecto } = require_(MOD("demo/seed.js"));
   const { migrarBase, completarImagenesDelSeed } = require_(MOD("demo/migraciones.js"));
@@ -823,7 +823,7 @@ seccion("Migración no destructiva (v2 → v3)");
 
   const migrada = migrarBase(guardada);
   ok(migrada !== null, "una base v2 guardada se puede migrar");
-  ok(migrada.version === 3, "queda en la versión nueva");
+  ok(migrada.version === 4, "queda en la versión nueva");
   ok(
     migrada.orders.length === 1 && migrada.orders[0].orderNumber === "0007",
     "el pedido viejo sigue ahí"
@@ -868,6 +868,41 @@ seccion("Migración no destructiva (v2 → v3)");
   ok(
     completados.length === 0,
     "sobre una base ya al día, la migración no toca nada"
+  );
+
+  /* --- v3 → v4: el caso REAL del deploy anterior. La base ya tiene `image`
+     apuntando al archivo público de cada acompañamiento —el nombre no
+     cambió— pero nunca tuvo `stageImage`, porque ese campo no existía. */
+  const papasV3 = semilla.products.find((p) => p.name === "Papas de la casa");
+  const arosV3 = semilla.products.find((p) => p.name === "Aros de cebolla");
+  const guardadaV3 = {
+    ...semilla,
+    version: 3,
+    products: semilla.products.map((p) => {
+      if (p.id === papasV3.id) return { ...p, stageImageUrl: undefined };
+      if (p.id === arosV3.id) {
+        /* Además tiene una imagen elegida a mano desde el panel: tiene que
+           sobrevivir la migración igual que en el caso v2. */
+        return { ...p, stageImageUrl: undefined, imageUrl: "/hamburgueseria/galeria/local-01-salon-garage.jpg" };
+      }
+      return p;
+    }),
+  };
+  const migradaV3 = migrarBase(guardadaV3);
+  ok(migradaV3?.version === 4, "una base v3 también migra a la versión actual");
+  const papasMigrada = migradaV3.products.find((p) => p.id === papasV3.id);
+  ok(
+    papasMigrada.stageImageUrl === papasV3.stageImageUrl,
+    "y recibe el stageImage nuevo de los acompañamientos, que en v3 no existía"
+  );
+  ok(
+    papasMigrada.imageUrl === papasV3.imageUrl,
+    "sin tocar el image existente: el archivo público no cambió de nombre"
+  );
+  const arosMigrada = migradaV3.products.find((p) => p.id === arosV3.id);
+  ok(
+    arosMigrada.imageUrl === "/hamburgueseria/galeria/local-01-salon-garage.jpg",
+    "una imagen elegida a mano en v3 tampoco se pisa al migrar a v4"
   );
 }
 

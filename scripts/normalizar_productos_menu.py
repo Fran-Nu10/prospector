@@ -37,16 +37,42 @@ Qué hace con las hamburguesas, y por qué:
 
 Qué hace con los acompañamientos:
 
-Son fotografías OPACAS —JPEG de verdad, sin canal alfa— y este pipeline no
-inventa transparencia: no recorta fondos por umbral ni por magia. Lo único que
-normaliza es el encuadre: recorte cuadrado centrado y WebP real, para que las
-tres fotos tengan el mismo lienzo y el mismo peso visual dentro de la grilla
-compacta.
+Hay DOS tipos de archivo posibles para el mismo producto, y el pipeline elige
+por lo que encuentra en los BYTES, no por el nombre:
 
-El emparejamiento archivo → producto es POR NOMBRE, nunca por orden: se
+  · un PNG con alfa REAL → pasa por el MISMO recorte que las hamburguesas
+    (`normalizar()`, reutilizada tal cual): se recorta la transparencia, se
+    escala para igualar el tamaño aparente de las otras dos, se apoya en la
+    misma línea de piso y sale como WebP con canal alfa. Es lo que permite que
+    la vitrina lo muestre flotando, igual que una burger.
+  · una foto OPACA (JPEG real, o un PNG sin alfa) → se recorta a un cuadrado
+    centrado, sin inventarle transparencia por umbral ni por magia, y sale
+    como WebP opaco. Es el camino de siempre, para cuando no hay recorte.
+
+Si para un mismo producto llegan los dos —una foto vieja y un recorte nuevo—
+GANA EL TRANSPARENTE: es lo que hace que subir un recorte reemplace la foto
+opaca en vez de convivir con ella por casualidad del orden alfabético.
+
+El emparejamiento archivo → producto es POR NOMBRE, nunca por orden. Se
 normaliza el nombre del archivo (sin tildes, espacios, guiones ni la palabra
-"acompañamiento") y se busca el producto con ese mismo nombre normalizado en
-el JSON del prospecto. Lo que no empareja se reporta y no se asigna.
+"acompañamiento") y se compara contra el nombre del producto en el JSON del
+prospecto, DE DOS FORMAS:
+
+  1. Igualdad directa del nombre completo normalizado
+     ("papasdelacasaacompañamiento.jpg" → "papasdelacasa" == "Papas de la
+     casa" sin tildes ni espacios).
+  2. Si eso no alcanza, se comparan las dos formas SIN CONECTORES ("de", "del",
+     "la", "las", "el", "en") y se acepta una igualdad o que una sea PREFIJO de
+     la otra ("papasacompañamientotransparente.png" → "papas" es prefijo de
+     "papascasa"; "aroscebollaacompañamientotransparente.png" → "aroscebolla"
+     ya es exactamente igual a "arosdecebolla" sin el "de").
+
+El prefijo se acepta porque quien nombra el archivo puede abreviar ("papas" en
+vez de "papas de la casa"), pero SOLO si el resultado es único: si dos
+productos calzaran con el mismo prefijo, no se asigna a ninguno y se reporta —
+la ambigüedad no se resuelve por orden ni por adivinanza.
+
+Lo que no empareja de ninguna de las dos formas se reporta y no se asigna.
 
 Uso:
     python3 scripts/normalizar_productos_menu.py            # todo
@@ -201,7 +227,14 @@ def centro_de_masa(imagen: Image.Image) -> tuple[float, float]:
     return suma_x / total, suma_y / total
 
 
-def normalizar(ruta: Path, destino: Path = DESTINO, salida_nombre: str | None = None) -> Informe:
+def normalizar(
+    ruta: Path,
+    destino: Path = DESTINO,
+    salida_nombre: str | None = None,
+    *,
+    lado_percibido: int = LADO_PERCIBIDO,
+    alto_visible_max: float = ALTO_VISIBLE_MAX,
+) -> Informe:
     formato = firma_real(ruta)
     if formato == "JPEG":
         raise ValueError(
@@ -244,8 +277,8 @@ def normalizar(ruta: Path, destino: Path = DESTINO, salida_nombre: str | None = 
     #
     # Y por encima de las tres, el 1.0: nunca se agranda.
     util = min(LADO_VISIBLE_MAX, int(LIENZO * (1 - 2 * MARGEN)))
-    por_percibido = LADO_PERCIBIDO / math.sqrt(rw * rh)
-    por_alto = (ALTO_VISIBLE_MAX * LIENZO) / rh
+    por_percibido = lado_percibido / math.sqrt(rw * rh)
+    por_alto = (alto_visible_max * LIENZO) / rh
     escala = min(por_percibido, por_alto, util / rw, util / rh, 1.0)
     if escala < 1.0:
         recorte = recorte.resize((round(rw * escala), round(rh * escala)), Image.LANCZOS)
@@ -299,22 +332,55 @@ def normalizar(ruta: Path, destino: Path = DESTINO, salida_nombre: str | None = 
 
 #: La palabra que marca un archivo de acompañamiento, ya normalizada.
 MARCA_ACOMPANAMIENTO = "acompanamiento"
-#: Lado del cuadrado de salida. Más chico que el de las burgers a propósito:
-#: es una miniatura de grilla, no una vitrina.
+#: Lado del cuadrado de salida OPACA. Más chico que el de las burgers a
+#: propósito: es una miniatura de grilla, no una vitrina.
 LIENZO_ACOMP = 1100
 
+#: Conectores que se ignoran al comparar nombres, SOLO como segunda pasada
+#: (ver el docstring del módulo). No se tocan en la primera comparación —la
+#: igualdad directa— para no cambiar el comportamiento ya probado con los
+#: archivos opacos originales.
+CONECTORES_ES = {"de", "del", "la", "las", "el", "en"}
 
-def normalizar_texto(texto: str) -> str:
+#: TAMAÑO APARENTE DE REFERENCIA para los acompañamientos TRANSPARENTES, en
+#: píxeles del lienzo de 1600 que usa `normalizar()`.
+#:
+#: Es la media geométrica √(ancho·alto) del recorte de "Aros de cebolla" tal
+#: como llegó de la agencia (1227×1075 → 1148). Se la eligió a ELLA por ser la
+#: intermedia de las tres fotos —ni la más chata (Papas, 1047) ni la más
+#: grande (Nuggets, 1184)—, el mismo criterio con el que se eligió Oklahoma
+#: como referencia de las hamburguesas: la composición del medio, no la más
+#: grande ni la más chica, para no forzar ni un achique ni un agrandamiento
+#: artificial en los otros dos.
+LADO_PERCIBIDO_ACOMP = 1148
+
+#: Techo de altura visible para los acompañamientos transparentes, en fracción
+#: del lienzo de 1600. Más alto que el de las hamburguesas (58%) porque acá no
+#: hay un nombre gigante detrás que tapar: el escenario compacto solo necesita
+#: que las tres fotos se vean del mismo porte.
+ALTO_VISIBLE_MAX_ACOMP = 0.70
+
+
+def normalizar_texto(texto: str, *, quitar_conectores: bool = False) -> str:
     """
     Nombre comparable: sin tildes, sin ñ, sin signos, sin espacios, minúsculas.
 
     Es lo que permite que `papas de la casaacompañamiento.jpg`,
     `Papas-de-la-Casa-acompanamiento.webp` y el producto "Papas de la casa"
     del JSON sean, para el emparejamiento, exactamente la misma cosa.
+
+    Con `quitar_conectores=True` además se sacan "de", "la", "del"… ANTES de
+    pegar las palabras, para el segundo intento de emparejamiento (ver el
+    docstring del módulo). Los conectores se identifican por PALABRA —contra
+    el texto con espacios todavía— y no por substring, así que un producto
+    como "Delicia" no pierde su "deli" por tener un "de" adentro.
     """
     sin_tildes = unicodedata.normalize("NFD", texto)
-    sin_tildes = "".join(c for c in sin_tildes if unicodedata.category(c) != "Mn")
-    return re.sub(r"[^a-z0-9]+", "", sin_tildes.lower())
+    sin_tildes = "".join(c for c in sin_tildes if unicodedata.category(c) != "Mn").lower()
+    if quitar_conectores:
+        palabras = [w for w in re.findall(r"[a-z0-9]+", sin_tildes) if w not in CONECTORES_ES]
+        return "".join(palabras)
+    return re.sub(r"[^a-z0-9]+", "", sin_tildes)
 
 
 def producto_de_archivo(nombre_archivo: str) -> str | None:
@@ -333,21 +399,60 @@ def producto_de_archivo(nombre_archivo: str) -> str | None:
     return izquierda or None
 
 
-def nombres_de_acompanamientos() -> dict[str, str]:
+def nombres_de_acompanamientos() -> tuple[dict[str, str], dict[str, str]]:
     """
-    Nombre normalizado → nombre real, leídos del JSON del prospecto.
+    Nombres de acompañamientos leídos del JSON del prospecto, en las DOS formas
+    que se comparan contra un archivo (ver el docstring del módulo):
+
+      · `plano`       — nombre normalizado completo, tal como se venía usando;
+      · `sin_conectores` — el mismo nombre, pero sin "de"/"la"/"del"…, para
+        cuando el archivo abrevia ("papas" en vez de "papas de la casa").
 
     Los nombres NO se escriben acá: los pone el negocio. Este script empareja
     contra lo que el JSON diga hoy.
     """
     datos = json.loads(PROSPECTO.read_text(encoding="utf-8"))
-    mapa: dict[str, str] = {}
+    plano: dict[str, str] = {}
+    sin_conectores: dict[str, str] = {}
     for seccion in datos.get("menu", []):
         if normalizar_texto(seccion.get("title", "")) != "acompanamientos":
             continue
         for item in seccion.get("items", []):
-            mapa[normalizar_texto(item["name"])] = item["name"]
-    return mapa
+            plano[normalizar_texto(item["name"])] = item["name"]
+            sin_conectores[normalizar_texto(item["name"], quitar_conectores=True)] = item["name"]
+    return plano, sin_conectores
+
+
+def emparejar_producto(
+    clave_archivo: str, plano: dict[str, str], sin_conectores: dict[str, str]
+) -> str | None:
+    """
+    Qué producto nombra `clave_archivo` (ya extraída con `producto_de_archivo`).
+
+    Tres intentos, en orden, el primero que resuelve gana:
+
+      1. Igualdad directa contra el nombre completo normalizado.
+      2. Igualdad contra el nombre SIN CONECTORES.
+      3. `clave_archivo` como PREFIJO del nombre sin conectores —para un
+         archivo que abrevia—, solo si hay EXACTAMENTE un producto que calce.
+         Con dos o más, no se decide por adivinanza: no matchea ninguno.
+
+    `None` si ningún camino resuelve: el archivo se reporta como huérfano, no
+    se le asigna el que más se le parezca.
+    """
+    if clave_archivo in plano:
+        return plano[clave_archivo]
+    if clave_archivo in sin_conectores:
+        return sin_conectores[clave_archivo]
+
+    candidatos = {
+        nombre
+        for clave, nombre in sin_conectores.items()
+        if clave.startswith(clave_archivo) or clave_archivo.startswith(clave)
+    }
+    if len(candidatos) == 1:
+        return next(iter(candidatos))
+    return None
 
 
 @dataclass
@@ -419,12 +524,52 @@ def normalizar_acompanamiento(ruta: Path, producto: str, slug: str) -> InformeAc
     )
 
 
-def procesar_acompanamientos() -> tuple[list[InformeAcomp], list[str], list[str]]:
-    """Devuelve (procesados, archivos sin producto, productos sin archivo)."""
-    catalogo = nombres_de_acompanamientos()
-    procesados: list[InformeAcomp] = []
+def normalizar_acomp_transparente(ruta: Path, producto: str, slug: str) -> Informe:
+    """
+    Un acompañamiento con recorte de verdad pasa por el MISMO pipeline que las
+    hamburguesas —reutilizado, no reimplementado—, solo que apunta a la
+    carpeta pública de acompañamientos y usa la referencia de escala medida
+    entre las tres fotos (`LADO_PERCIBIDO_ACOMP`), no la de las burgers.
+    """
+    return normalizar(
+        ruta,
+        destino=DESTINO_ACOMP,
+        salida_nombre=slug,
+        lado_percibido=LADO_PERCIBIDO_ACOMP,
+        alto_visible_max=ALTO_VISIBLE_MAX_ACOMP,
+    )
+
+
+@dataclass
+class ResultadoAcompanamientos:
+    transparentes: list[Informe]
+    opacos: list[InformeAcomp]
+    #: Nombre del producto → nombre del archivo transparente que reemplazó a
+    #: uno opaco existente. Es lo que hace visible en el reporte que subir un
+    #: recorte nuevo desplazó a la foto vieja, en vez de convivir con ella.
+    reemplazados: dict[str, str]
+    huerfanos: list[str]
+    ambiguos: list[str]
+    sin_foto: list[str]
+
+
+def procesar_acompanamientos() -> ResultadoAcompanamientos:
+    """
+    Recorre `assets/hamburgueseria/`, empareja cada archivo de acompañamiento
+    con su producto POR NOMBRE (nunca por orden) y decide el pipeline por lo
+    que hay en los bytes: transparente si tiene alfa real, opaco si no.
+
+    Si para un mismo producto hay candidatos de los dos tipos, gana el
+    transparente — es la única forma de que "subí un recorte nuevo" reemplace
+    la foto vieja de manera predecible, sin depender del orden en que
+    `iterdir()` devuelva los archivos.
+    """
+    plano, sin_conectores = nombres_de_acompanamientos()
+
+    #: producto real → lista de (ruta, formato, tiene_alfa)
+    candidatos: dict[str, list[tuple[Path, str, bool]]] = {}
     huerfanos: list[str] = []
-    emparejados: set[str] = set()
+    ambiguos: list[str] = []
 
     for ruta in sorted(ORIGEN_ACOMP.iterdir()):
         if not ruta.is_file():
@@ -432,16 +577,52 @@ def procesar_acompanamientos() -> tuple[list[InformeAcomp], list[str], list[str]
         clave = producto_de_archivo(ruta.name)
         if clave is None:
             continue
-        if clave not in catalogo:
-            huerfanos.append(ruta.name)
+        producto = emparejar_producto(clave, plano, sin_conectores)
+        if producto is None:
+            posibles = _prefijos_ambiguos(clave, sin_conectores)
+            (ambiguos if len(posibles) > 1 else huerfanos).append(ruta.name)
             continue
-        emparejados.add(clave)
-        procesados.append(
-            normalizar_acompanamiento(ruta, catalogo[clave], aslug(catalogo[clave]))
-        )
+        formato = firma_real(ruta)
+        tiene_alfa = formato == "PNG" and alfa_real(Image.open(ruta).convert("RGBA"))
+        candidatos.setdefault(producto, []).append((ruta, formato, tiene_alfa))
 
-    sin_foto = [catalogo[k] for k in catalogo if k not in emparejados]
-    return procesados, huerfanos, sin_foto
+    transparentes: list[Informe] = []
+    opacos: list[InformeAcomp] = []
+    reemplazados: dict[str, str] = {}
+
+    for producto, opciones in candidatos.items():
+        slug = aslug(producto)
+        transp = [o for o in opciones if o[2]]
+        if transp:
+            ruta_elegida = transp[0][0]
+            transparentes.append(normalizar_acomp_transparente(ruta_elegida, producto, slug))
+            opacas_desplazadas = [o[0].name for o in opciones if not o[2]]
+            if opacas_desplazadas:
+                reemplazados[producto] = f"{ruta_elegida.name} (antes: {', '.join(opacas_desplazadas)})"
+            continue
+        ruta_elegida = opciones[0][0]
+        opacos.append(normalizar_acompanamiento(ruta_elegida, producto, slug))
+
+    sin_foto = [nombre for nombre in plano.values() if nombre not in candidatos]
+    return ResultadoAcompanamientos(
+        transparentes=transparentes,
+        opacos=opacos,
+        reemplazados=reemplazados,
+        huerfanos=huerfanos,
+        ambiguos=ambiguos,
+        sin_foto=sin_foto,
+    )
+
+
+def _prefijos_ambiguos(clave_archivo: str, sin_conectores: dict[str, str]) -> set[str]:
+    """Nombres de producto que calzarían por prefijo con `clave_archivo` — para
+    poder distinguir en el reporte un archivo REALMENTE huérfano de uno cuyo
+    prefijo es ambiguo entre dos o más productos."""
+    return {
+        nombre
+        for clave, nombre in sin_conectores.items()
+        if clave.startswith(clave_archivo) or clave_archivo.startswith(clave)
+    }
 
 
 def aslug(nombre: str) -> str:
@@ -480,7 +661,44 @@ def main(argv: list[str]) -> int:
         x, y, w, h = i.caja_lienzo
         print(f"  {i.slug:<14}{x + w / 2:>10.3f}{y + h:>9.3f}{h:>8.3f}{w:>8.3f}")
 
+    print("\n\nACOMPAÑAMIENTOS")
+    resultado = procesar_acompanamientos()
+    if resultado.transparentes:
+        print("\n  con recorte transparente (mismo pipeline que las hamburguesas):")
+        for informe in resultado.transparentes:
+            informe.imprimir()
+    if resultado.opacos:
+        print("\n  con foto opaca, encuadre cuadrado:")
+        for informe in resultado.opacos:
+            informe.imprimir()
+    if resultado.reemplazados:
+        print("\n  reemplazos (el recorte transparente desplazó a la foto opaca):")
+        for producto, detalle in resultado.reemplazados.items():
+            print(f"    · {producto}: {detalle}")
+    if resultado.ambiguos:
+        print("\n  archivos AMBIGUOS — el nombre calza con más de un producto (no se asignan):")
+        for nombre in resultado.ambiguos:
+            print(f"    · {nombre}")
+    if resultado.huerfanos:
+        print("\n  archivos SIN producto que les corresponda (no se asignan):")
+        for nombre in resultado.huerfanos:
+            print(f"    · {nombre}")
+    if resultado.sin_foto:
+        print("\n  productos SIN foto (se quedan con su fallback):")
+        for nombre in resultado.sin_foto:
+            print(f"    · {nombre}")
+
     if not filtro:
+        productos_manifiesto = {
+            i.slug: {
+                "x": round(i.caja_lienzo[0], 4),
+                "y": round(i.caja_lienzo[1], 4),
+                "ancho": round(i.caja_lienzo[2], 4),
+                "alto": round(i.caja_lienzo[3], 4),
+                "escala": round(i.escala, 4),
+            }
+            for i in [*informes, *resultado.transparentes]
+        }
         MANIFIESTO.write_text(
             json.dumps(
                 {
@@ -488,16 +706,9 @@ def main(argv: list[str]) -> int:
                     "lineaBase": LINEA_BASE,
                     "ladoPercibido": LADO_PERCIBIDO,
                     "altoVisibleMax": ALTO_VISIBLE_MAX,
-                    "productos": {
-                        i.slug: {
-                            "x": round(i.caja_lienzo[0], 4),
-                            "y": round(i.caja_lienzo[1], 4),
-                            "ancho": round(i.caja_lienzo[2], 4),
-                            "alto": round(i.caja_lienzo[3], 4),
-                            "escala": round(i.escala, 4),
-                        }
-                        for i in informes
-                    },
+                    "ladoPercibidoAcomp": LADO_PERCIBIDO_ACOMP,
+                    "altoVisibleMaxAcomp": ALTO_VISIBLE_MAX_ACOMP,
+                    "productos": productos_manifiesto,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -506,19 +717,6 @@ def main(argv: list[str]) -> int:
             encoding="utf-8",
         )
         print(f"\n  geometría medida → {MANIFIESTO.relative_to(RAIZ)}")
-
-    print("\n\nACOMPAÑAMIENTOS — fotos opacas, encuadre cuadrado")
-    procesados, huerfanos, sin_foto = procesar_acompanamientos()
-    for informe in procesados:
-        informe.imprimir()
-    if huerfanos:
-        print("\n  archivos SIN producto que les corresponda (no se asignan):")
-        for nombre in huerfanos:
-            print(f"    · {nombre}")
-    if sin_foto:
-        print("\n  productos SIN foto (se quedan con su fallback):")
-        for nombre in sin_foto:
-            print(f"    · {nombre}")
 
     print(f"\nSalida en {DESTINO.relative_to(RAIZ)} y {DESTINO_ACOMP.relative_to(RAIZ)}")
     return 0

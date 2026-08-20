@@ -314,15 +314,50 @@ console.log('\n=== assets del menú');
     acomp.every((i) => i.image.endsWith(`/${aslug(i.name)}.webp`)),
     'cada acompañamiento apunta al archivo con SU nombre, no al que le tocó por orden'
   );
-
-  const altos = Object.values(GEO.productos).map((g) => g.alto);
+  /* Los tres recortes nuevos: WebP real, CON stageImage —el recorte
+     transparente que reemplaza a la foto opaca de antes— y con geometría
+     medida por el mismo pipeline que las hamburguesas. */
   chk(
-    Object.values(GEO.productos).every((g) => Math.abs(g.y + g.alto - GEO.lineaBase) < 0.002),
-    'todos los recortes apoyan en la misma línea del lienzo'
+    acomp.every((i) => i.stageImage && esWebp(i.stageImage)),
+    'los tres acompañamientos tienen su recorte transparente en WebP real'
   );
   chk(
-    Math.max(...altos) - Math.min(...altos) <= 0.06,
-    `las alturas visibles caen en una banda estrecha (${Math.min(...altos).toFixed(3)}–${Math.max(...altos).toFixed(3)} del lienzo)`
+    acomp.every((i) => GEO.productos[aslug(i.name)]),
+    'y cada uno tiene su geometría medida, igual que las hamburguesas'
+  );
+
+  chk(
+    Object.values(GEO.productos).every((g) => Math.abs(g.y + g.alto - GEO.lineaBase) < 0.002),
+    'todos los recortes —hamburguesas y acompañamientos— apoyan en la misma línea del lienzo'
+  );
+  /* La banda de altura es un patrón de las CINCO HAMBURGUESAS: comparten una
+     sola referencia (`LADO_PERCIBIDO`) porque comparten un solo escenario, con
+     el nombre gigante detrás. Los acompañamientos usan su propia referencia
+     (`LADO_PERCIBIDO_ACOMP`, ver el script de normalización) porque son un
+     grupo visual distinto —tres fotos entre sí, no cinco burgers contra un
+     título— así que no tiene sentido exigirles la misma banda que a las
+     hamburguesas. */
+  const burgerSlugs = new Set(MENU[0].items.map((i) => aslug(i.name)));
+  const altosBurgers = Object.entries(GEO.productos)
+    .filter(([slug]) => burgerSlugs.has(slug))
+    .map(([, g]) => g.alto);
+  chk(
+    Math.max(...altosBurgers) - Math.min(...altosBurgers) <= 0.06,
+    `las alturas de las hamburguesas caen en una banda estrecha (${Math.min(...altosBurgers).toFixed(3)}–${Math.max(...altosBurgers).toFixed(3)} del lienzo)`
+  );
+  /* Los acompañamientos NO comparten la forma de una hamburguesa entre sí
+     —una pila de papas, un aro y un puñado de nuggets tienen proporciones
+     bien distintas—, así que igualar su ALTO los deformaría o los dejaría con
+     aire desparejo. Lo que se equilibra es el TAMAÑO APARENTE —la media
+     geométrica de la caja visible, la misma métrica que usa el script de
+     normalización para las hamburguesas— y no la altura sola. */
+  const acompSlugs = new Set(MENU[1].items.map((i) => aslug(i.name)));
+  const percibidoAcomp = Object.entries(GEO.productos)
+    .filter(([slug]) => acompSlugs.has(slug))
+    .map(([, g]) => Math.sqrt(g.ancho * GEO.lienzo * g.alto * GEO.lienzo));
+  chk(
+    Math.max(...percibidoAcomp) - Math.min(...percibidoAcomp) <= 150,
+    `y los acompañamientos comparten un tamaño aparente equilibrado (${Math.min(...percibidoAcomp).toFixed(0)}–${Math.max(...percibidoAcomp).toFixed(0)} px, referencia ${GEO.ladoPercibidoAcomp})`
   );
 }
 
@@ -420,14 +455,19 @@ for (const [w, h, tag] of [[1440, 900, 'd1440'], [390, 844, 'm390']]) {
   const bacon = burgers.find((m) => /bacon/i.test(m.nombre));
   chk(bacon?.tipo === 'recorte', 'Bacon Fest ya no muestra el rectángulo opaco');
 
+  /* Antes mostraban la foto opaca (`data-media="foto"`); con el recorte
+     transparente nuevo pasan a flotar igual que una hamburguesa. */
   chk(
-    acompanamientos.length === 3 && acompanamientos.every((m) => m.tipo === 'foto'),
-    'los acompañamientos muestran su foto en la variante compacta'
+    acompanamientos.length === 3 && acompanamientos.every((m) => m.tipo === 'recorte'),
+    'los acompañamientos ya muestran su recorte transparente, no el rectángulo opaco'
   );
+  /* Mismo margen que las hamburguesas (<8px): el ancho de la caja `media`
+     depende del `escala` propio de cada foto, así que el redondeo del
+     porcentaje acumula un poco más que en un centrado geométrico exacto. */
   const ejesAcomp = acompanamientos.map((m) => m.visible.x + m.visible.w / 2 - (m.escena.x + m.escena.w / 2));
   chk(
-    Math.max(...ejesAcomp.map(Math.abs)) < 2,
-    'y también están centrados sobre el eje'
+    Math.max(...ejesAcomp.map(Math.abs)) < 8,
+    `y también están centrados sobre el eje (desvío máx ${Math.max(...ejesAcomp.map(Math.abs)).toFixed(1)}px)`
   );
 
   /* Transparencia REAL del recorte, leída del píxel: una esquina del lienzo
@@ -444,6 +484,23 @@ for (const [w, h, tag] of [[1440, 900, 'd1440'], [390, 844, 'm390']]) {
     return ctx.getImageData(2, 2, 1, 1).data[3];
   }, MENU[0].items[1].stageImage);
   chk(alfa === 0, `el recorte de Bacon Fest tiene alfa real (esquina = ${alfa})`);
+
+  /* Misma comprobación para uno de los acompañamientos nuevos: transparencia
+     real, no un JPEG con la extensión cambiada. */
+  const alfaAcomp = await p.evaluate(async (src) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return ctx.getImageData(2, 2, 1, 1).data[3];
+  }, MENU[1].items[0].stageImage);
+  chk(
+    alfaAcomp === 0,
+    `el recorte de ${MENU[1].items[0].name} tiene alfa real (esquina = ${alfaAcomp})`
+  );
 
   const overflow = await p.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -469,25 +526,34 @@ console.log('\n=== base guardada de la versión anterior');
   await p.goto(U, { waitUntil: 'networkidle' });
   await p.waitForTimeout(600);
 
-  /* Se fabrica la base ANTERIOR a partir de la actual: versión 2, sin las
-     imágenes que este cambio agrega, y con un pedido del dueño adentro. */
+  /* La clave se detecta por PATRÓN, no por número fijo: la versión sube con
+     cada cambio de assets y este test no puede quedar atado a "v3". Se
+     fabrica la base ANTERIOR quitándole un paso —la versión previa a la
+     actual—, sin las imágenes que este cambio agrega, y con un pedido y una
+     imagen elegida a mano del dueño adentro. */
   const preparado = await p.evaluate(() => {
-    const claveV3 = Object.keys(localStorage).find((k) => /ecommerce.*:v3$/.test(k));
-    const db = JSON.parse(localStorage.getItem(claveV3));
+    const claveActual = Object.keys(localStorage).find((k) => /ecommerce.*:v\d+$/.test(k));
+    const version = Number(claveActual.match(/:v(\d+)$/)[1]);
+    const db = JSON.parse(localStorage.getItem(claveActual));
     const vieja = {
       ...db,
-      version: 2,
+      version: version - 1,
       products: db.products.map((prod) => {
         if (prod.name === 'Bacon Fest') return { ...prod, stageImageUrl: undefined };
-        if (prod.name === 'Papas de la casa') return { ...prod, imageUrl: undefined };
+        /* Aros de cebolla queda con una imagen elegida a mano desde el panel:
+           tiene que sobrevivir la migración, no solo completarse el hueco. */
+        if (prod.name === 'Aros de cebolla') {
+          return { ...prod, stageImageUrl: undefined, imageUrl: '/hamburgueseria/galeria/local-02-cartel-burger.jpg' };
+        }
+        if (prod.name === 'Papas de la casa') return { ...prod, stageImageUrl: undefined };
         return prod;
       }),
       settings: { ...db.settings, defaultPrepMinutes: 42 },
       orders: [{ id: 'viejo', orderNumber: '0009', totalCents: 55500 }],
     };
-    localStorage.setItem(claveV3.replace(/:v3$/, ':v2'), JSON.stringify(vieja));
-    localStorage.removeItem(claveV3);
-    return claveV3;
+    localStorage.setItem(claveActual.replace(/:v\d+$/, `:v${version - 1}`), JSON.stringify(vieja));
+    localStorage.removeItem(claveActual);
+    return claveActual;
   });
 
   await p.reload({ waitUntil: 'networkidle' });
@@ -496,7 +562,7 @@ console.log('\n=== base guardada de la versión anterior');
   await p.waitForTimeout(900);
 
   /* El segundo slide de la PRIMERA pista es Bacon Fest; la segunda pista son
-     los acompañamientos y también tiene un slide 2. */
+     los acompañamientos. */
   const bacon = p
     .locator('#menu [aria-roledescription="carrusel"]')
     .first()
@@ -505,19 +571,34 @@ console.log('\n=== base guardada de la versión anterior');
     (await bacon.getAttribute('data-media')) === 'recorte',
     'una base vieja recibe los assets nuevos sin borrar nada a mano'
   );
+  const papas = p
+    .locator('#menu [aria-roledescription="carrusel"]')
+    .nth(1)
+    .locator('li[aria-posinset="1"] [data-media]');
+  chk(
+    (await papas.getAttribute('data-media')) === 'recorte',
+    'y el recorte transparente de Papas de la casa también, aunque antes solo tuviera la foto opaca'
+  );
 
   const estado = await p.evaluate((clave) => {
     const db = JSON.parse(localStorage.getItem(clave) ?? 'null');
-    return db && {
+    if (!db) return null;
+    const aros = db.products.find((p) => p.name === 'Aros de cebolla');
+    return {
       version: db.version,
       pedidos: db.orders.length,
       numero: db.orders[0]?.orderNumber,
       prep: db.settings.defaultPrepMinutes,
+      imagenDeAros: aros?.imageUrl,
     };
   }, preparado);
   chk(
-    estado?.version === 3 && estado.pedidos === 1 && estado.numero === '0009' && estado.prep === 42,
+    estado?.pedidos === 1 && estado.numero === '0009' && estado.prep === 42,
     `la migración conservó el pedido y la configuración (${JSON.stringify(estado)})`
+  );
+  chk(
+    estado?.imagenDeAros === '/hamburgueseria/galeria/local-02-cartel-burger.jpg',
+    'y no pisó la imagen que el dueño había elegido a mano para Aros de cebolla'
   );
 
   await p.close();

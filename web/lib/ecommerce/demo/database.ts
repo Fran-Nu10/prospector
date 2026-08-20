@@ -51,12 +51,19 @@ export interface DemoDatabase {
  * v1 → v2 (fase 5): categorías, productos y zonas suman `archived`; el pedido
  * suma `stockApplied`. Una v1 no tiene esos campos y se regenera.
  *
- * v2 → v3: assets normalizados del menú. NO se descarta nada: `migraciones.ts`
- * levanta la v2 guardada, completa las imágenes que faltaban y devuelve todo
- * lo demás igual. Un dueño que ya cargó pedidos y corrigió precios no puede
- * perderlos porque cambiaron unas fotos.
+ * v2 → v3: assets normalizados del menú (hamburguesas + fotos opacas de
+ * acompañamientos). NO se descarta nada: `migraciones.ts` levanta la base
+ * anterior, completa las imágenes que faltaban y devuelve todo lo demás
+ * igual. Un dueño que ya cargó pedidos y corrigió precios no puede perderlos
+ * porque cambiaron unas fotos.
+ *
+ * v3 → v4: los tres acompañamientos suman `stageImage` (el recorte
+ * transparente que reemplaza a la foto opaca). Una base v3 ya tiene el campo
+ * `image` apuntando al archivo público correcto —el nombre del archivo no
+ * cambió, solo su contenido— así que lo único que hace falta completar es
+ * `stageImage`, que en v3 no existía. Misma migración no destructiva.
  */
-const VERSION = 3 as const;
+const VERSION = 4 as const;
 
 /**
  * Clave con espacio de nombres por instalación: dos demos abiertas en el mismo
